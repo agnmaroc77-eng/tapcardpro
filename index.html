@@ -6,7 +6,6 @@
   <title>TAPCARD • Cartes Connectées NFC</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body class="bg-slate-100 min-h-screen flex flex-col items-center justify-center p-3 sm:p-6 font-sans antialiased text-slate-800">
 
@@ -18,22 +17,35 @@
     <div id="nav-actions"></div>
   </header>
 
-  <main id="root" class="w-full max-w-md flex flex-col items-center"></main>
+  <main id="root" class="w-full max-w-md flex flex-col items-center">
+    <div id="boot" class="p-8 bg-white rounded-3xl shadow-sm text-center text-slate-500">
+      <i class="fa-solid fa-circle-notch fa-spin text-2xl text-blue-600 mb-3"></i><br>Démarrage…
+    </div>
+  </main>
 
   <footer class="mt-8 text-xs text-slate-400 text-center">
     Propulsé par TAPCARD • Solution NFC Universelle
   </footer>
 
-  <script>
+  <script type="module">
     // ═══════════════════════════════════════════════════════════
-    // 🔧 CONFIGURATION — REMPLACE LA 2e LIGNE PAR TA CLÉ PUBLIQUE
+    // 🔧 CONFIGURATION
     // ═══════════════════════════════════════════════════════════
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
     const SUPABASE_URL = "https://xswrejpkgqcffdizrvut.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_ttAdLhtxOSDna58bSYJp7g_GlamHlNm";
 
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const BUCKET = "media";
 
+    // Enlever l'écran de chargement initial
+    const boot = document.getElementById("boot");
+    if (boot) boot.remove();
+
+    // ═══════════════════════════════════════════════════════════
+    // CONFIGURATION UI
+    // ═══════════════════════════════════════════════════════════
     const PALETTES = {
       blue:    { hex: "#2563eb", btn: "bg-blue-600 hover:bg-blue-700",       border: "border-blue-500"    },
       emerald: { hex: "#10b981", btn: "bg-emerald-600 hover:bg-emerald-700", border: "border-emerald-500" },
@@ -104,7 +116,7 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // VUE PUBLIQUE (?c=slug)
+    // VUE PUBLIQUE
     // ═══════════════════════════════════════════════════════════
     async function renderProfile(slug) {
       const root = document.getElementById("root");
@@ -279,7 +291,7 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // AUTHENTIFICATION SÉCURISÉE
+    // AUTHENTIFICATION
     // ═══════════════════════════════════════════════════════════
     async function getSession() {
       const { data: { session } } = await supabase.auth.getSession();
@@ -328,7 +340,7 @@
         const { error } = await supabase.auth.signInWithPassword({ email, password });
 
         if (error) {
-          err.textContent = "Email ou mot de passe incorrect.";
+          err.textContent = "Email ou mot de passe incorrect (" + error.message + ")";
           err.classList.remove("hidden");
           btn.disabled = false;
           btn.textContent = "Se connecter";
@@ -734,7 +746,12 @@
       if (event === "SIGNED_OUT") location.href = "/";
     });
 
-    route();
+    route().catch(err => {
+      document.getElementById("root").innerHTML = `
+        <div class="p-6 bg-red-50 text-red-700 rounded-2xl text-xs">
+          <b>Erreur au démarrage :</b><br>${err.message}
+        </div>`;
+    });
   </script>
 </body>
 </html>
