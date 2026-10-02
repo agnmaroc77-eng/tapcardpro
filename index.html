@@ -116,6 +116,47 @@
     }
 
     // ═══════════════════════════════════════════════════════════
+    // ✨ MODULE NFC — ÉCRITURE DIRECTE DEPUIS LE NAVIGATEUR
+    // ═══════════════════════════════════════════════════════════
+    async function writeNfcTag(customUrl = null) {
+      const targetUrl = customUrl || window.location.href;
+      const statusEl = document.getElementById("nfc-live-status");
+
+      // Vérifier la compatibilité
+      if (!('NDEFReader' in window)) {
+        alert("⚠️ L'écriture NFC directe nécessite :\n\n" +
+              "• Google Chrome sur Android\n" +
+              "• NFC activé dans les paramètres\n" +
+              "• Un site en HTTPS (Vercel c'est bon)\n\n" +
+              "Sur iPhone ou PC :\n" +
+              "Copiez le lien et utilisez l'application gratuite 'NFC Tools' pour écrire.");
+        return;
+      }
+
+      try {
+        if (statusEl) {
+          statusEl.innerHTML = `<span class="text-blue-600 font-semibold animate-pulse"><i class="fa-solid fa-spinner fa-spin"></i> Approchez votre carte NFC du dos du téléphone...</span>`;
+        }
+
+        const ndef = new NDEFReader();
+        await ndef.write({
+          records: [{ recordType: "url", data: targetUrl }]
+        });
+
+        if (statusEl) {
+          statusEl.innerHTML = `<span class="text-emerald-700 font-bold"><i class="fa-solid fa-circle-check"></i> Carte NFC écrite avec succès !</span>`;
+        }
+        alert("✅ Carte NFC programmée avec succès !\n\nElle ouvrira :\n" + targetUrl);
+
+      } catch (err) {
+        if (statusEl) {
+          statusEl.innerHTML = `<span class="text-red-600">❌ Erreur : ${err.message}</span>`;
+        }
+        alert("❌ Erreur d'écriture NFC :\n\n" + err.message + "\n\nVérifiez que :\n• La carte est bien posée sur le dos du téléphone\n• Vous ne l'avez pas retirée trop tôt\n• Le NFC est activé");
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // VUE PUBLIQUE
     // ═══════════════════════════════════════════════════════════
     async function renderProfile(slug) {
@@ -522,6 +563,21 @@
             <p class="text-xs text-slate-500 mt-1">Session admin active.</p>
           </div>
 
+          <!-- ✨ MODULE NFC -->
+          <div class="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 p-4 rounded-2xl mb-6">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-black uppercase text-emerald-900 tracking-wider">
+                <i class="fa-solid fa-wifi rotate-90 mr-1 text-emerald-600"></i> Module d'encodage NFC
+              </span>
+              <span class="text-[10px] bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded-full font-bold">Actif</span>
+            </div>
+            <p class="text-xs text-emerald-800 mb-3">Approchez votre carte NFC du dos du téléphone pour y graver l'adresse de ce profil.</p>
+            <button type="button" id="btn-nfc-standalone" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-2 shadow transition">
+              <i class="fa-solid fa-bolt"></i> Écrire l'URL sur une carte NFC
+            </button>
+            <div id="nfc-live-status" class="mt-2 text-center text-xs"></div>
+          </div>
+
           <div id="status-box"></div>
 
           <form id="mainCardForm" class="space-y-5">
@@ -667,6 +723,17 @@
       }
       current.custom_links.forEach(l => addLinkRow(l.platform, l.url, l.customName || ""));
       document.getElementById("add-link-btn").onclick = () => addLinkRow("instagram", "");
+
+      // ✨ Connexion du bouton NFC
+      document.getElementById("btn-nfc-standalone").onclick = () => {
+        const slug = document.getElementById("slug").value.trim().toLowerCase();
+        if (!slug) {
+          alert("⚠️ Entrez d'abord un slug (identifiant URL) avant d'écrire la carte NFC.");
+          return;
+        }
+        const writeUrl = `${window.location.origin}/?c=${slug}`;
+        writeNfcTag(writeUrl);
+      };
 
       document.getElementById("mainCardForm").onsubmit = async (e) => {
         e.preventDefault();
