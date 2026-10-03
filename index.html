@@ -109,6 +109,51 @@
     }
 
     // ═══════════════════════════════════════════════════════════
+    // 🆕 CONVERSION PHOTO URL → BASE64 POUR V-CARD
+    // Télécharge l'image depuis Supabase Storage et la convertit
+    // en base64 pour l'insérer dans le contact.
+    // ═══════════════════════════════════════════════════════════
+    async function urlToVCardPhoto(imageUrl) {
+      if (!imageUrl) return "";
+      try {
+        // Charger l'image depuis l'URL
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.crossOrigin = "anonymous";
+          i.onload = () => resolve(i);
+          i.onerror = reject;
+          i.src = imageUrl;
+        });
+
+        // Redimensionner à 200x200 max (les contacts n'ont pas besoin de plus)
+        const maxSize = 200;
+        let { width, height } = img;
+        if (width > height && width > maxSize) {
+          height = Math.round((height * maxSize) / width);
+          width = maxSize;
+        } else if (height > maxSize) {
+          width = Math.round((width * maxSize) / height);
+          height = maxSize;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+
+        // Convertir en JPEG base64
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        const match = dataUrl.match(/^data:image\/[a-zA-Z+]+;base64,(.+)$/);
+        if (!match) return "";
+
+        return `PHOTO;ENCODING=b;TYPE=JPEG:${match[1]}`;
+      } catch (err) {
+        console.warn("Photo non intégrée au contact :", err);
+        return "";
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // MODULE NFC
     // ═══════════════════════════════════════════════════════════
     async function writeNfcTag(customUrl = null) {
@@ -259,7 +304,7 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // V-CARD AVEC RÉSEAUX SOCIAUX
+    // V-CARD AVEC PHOTO + RÉSEAUX SOCIAUX
     // ═══════════════════════════════════════════════════════════
     async function saveContactDirect(data) {
       const btn = document.getElementById("save-contact-btn");
@@ -270,17 +315,23 @@
         const phones = Array.isArray(data.phones) ? data.phones : (data.phone ? [{ type: "CELL", number: data.phone }] : []);
         const esc = v => String(v || "").replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n");
 
-        // ─── Photo ───
+        // ─── Photo (nouvelle logique : URL OU base64) ───
         let photoLine = "";
         const avatarData = data.avatar || (data.links && data.links.avatar);
-        if (avatarData && avatarData.startsWith("data:image")) {
-          const m = avatarData.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
-          if (m) {
-            let t = "JPEG";
-            if (m[1].includes("png")) t = "PNG";
-            else if (m[1].includes("gif")) t = "GIF";
-            else if (m[1].includes("webp")) t = "WEBP";
-            photoLine = `PHOTO;ENCODING=b;TYPE=${t}:${m[2]}`;
+        if (avatarData) {
+          if (avatarData.startsWith("data:image")) {
+            // Base64 legacy (au cas où)
+            const m = avatarData.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+            if (m) {
+              let t = "JPEG";
+              if (m[1].includes("png")) t = "PNG";
+              else if (m[1].includes("gif")) t = "GIF";
+              else if (m[1].includes("webp")) t = "WEBP";
+              photoLine = `PHOTO;ENCODING=b;TYPE=${t}:${m[2]}`;
+            }
+          } else if (avatarData.startsWith("http")) {
+            // Nouvelle logique : URL Supabase → conversion en base64
+            photoLine = await urlToVCardPhoto(avatarData);
           }
         }
 
