@@ -28,9 +28,6 @@
   </footer>
 
   <script type="module">
-    // ═══════════════════════════════════════════════════════════
-    // 🔧 CONFIGURATION
-    // ═══════════════════════════════════════════════════════════
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
     const SUPABASE_URL = "https://xswrejpkgqcffdizrvut.supabase.co";
@@ -39,13 +36,9 @@
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const BUCKET = "media";
 
-    // Enlever l'écran de chargement initial
     const boot = document.getElementById("boot");
     if (boot) boot.remove();
 
-    // ═══════════════════════════════════════════════════════════
-    // CONFIGURATION UI
-    // ═══════════════════════════════════════════════════════════
     const PALETTES = {
       blue:    { hex: "#2563eb", btn: "bg-blue-600 hover:bg-blue-700",       border: "border-blue-500"    },
       emerald: { hex: "#10b981", btn: "bg-emerald-600 hover:bg-emerald-700", border: "border-emerald-500" },
@@ -116,13 +109,12 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ✨ MODULE NFC — ÉCRITURE DIRECTE DEPUIS LE NAVIGATEUR
+    // MODULE NFC
     // ═══════════════════════════════════════════════════════════
     async function writeNfcTag(customUrl = null) {
       const targetUrl = customUrl || window.location.href;
       const statusEl = document.getElementById("nfc-live-status");
 
-      // Vérifier la compatibilité
       if (!('NDEFReader' in window)) {
         alert("⚠️ L'écriture NFC directe nécessite :\n\n" +
               "• Google Chrome sur Android\n" +
@@ -139,9 +131,7 @@
         }
 
         const ndef = new NDEFReader();
-        await ndef.write({
-          records: [{ recordType: "url", data: targetUrl }]
-        });
+        await ndef.write({ records: [{ recordType: "url", data: targetUrl }] });
 
         if (statusEl) {
           statusEl.innerHTML = `<span class="text-emerald-700 font-bold"><i class="fa-solid fa-circle-check"></i> Carte NFC écrite avec succès !</span>`;
@@ -152,7 +142,7 @@
         if (statusEl) {
           statusEl.innerHTML = `<span class="text-red-600">❌ Erreur : ${err.message}</span>`;
         }
-        alert("❌ Erreur d'écriture NFC :\n\n" + err.message + "\n\nVérifiez que :\n• La carte est bien posée sur le dos du téléphone\n• Vous ne l'avez pas retirée trop tôt\n• Le NFC est activé");
+        alert("❌ Erreur d'écriture NFC :\n\n" + err.message);
       }
     }
 
@@ -268,6 +258,9 @@
       }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // V-CARD AVEC RÉSEAUX SOCIAUX
+    // ═══════════════════════════════════════════════════════════
     async function saveContactDirect(data) {
       const btn = document.getElementById("save-contact-btn");
       const orig = btn ? btn.innerHTML : "";
@@ -277,6 +270,7 @@
         const phones = Array.isArray(data.phones) ? data.phones : (data.phone ? [{ type: "CELL", number: data.phone }] : []);
         const esc = v => String(v || "").replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n");
 
+        // ─── Photo ───
         let photoLine = "";
         const avatarData = data.avatar || (data.links && data.links.avatar);
         if (avatarData && avatarData.startsWith("data:image")) {
@@ -290,17 +284,82 @@
           }
         }
 
+        // ─── Téléphones ───
         const telEntries = phones.map(p => `TEL;TYPE=CELL:${esc(p.number)}`).join("\r\n");
 
-        const vcard = [
-          "BEGIN:VCARD", "VERSION:3.0",
+        // ─── Réseaux sociaux & liens ───
+        const customLinks = (data.links && data.links.custom_links) || [];
+        const socialLines = [];
+        let websiteLine = "";
+        let mapsLine = "";
+
+        const prefixes = {
+          instagram: "https://instagram.com/",
+          linkedin:  "https://linkedin.com/in/",
+          facebook:  "https://facebook.com/",
+          tiktok:    "https://tiktok.com/@",
+          youtube:   "https://youtube.com/",
+          gmail:     "mailto:",
+          website:   "",
+          location:  "",
+          other:     ""
+        };
+
+        const platformNames = {
+          instagram: "Instagram", linkedin: "LinkedIn", facebook: "Facebook",
+          tiktok: "TikTok", youtube: "YouTube", gmail: "Gmail",
+          website: "Site_web", location: "Localisation", other: "Lien"
+        };
+
+        customLinks.forEach(l => {
+          const platform = l.platform;
+          let url = (l.url || "").trim();
+          if (!url) return;
+
+          if (!/^https?:\/\//.test(url) && !/^mailto:/.test(url)) {
+            const pfx = prefixes[platform] || "https://";
+            url = pfx + url.replace(/^@/, "");
+          }
+
+          const label = (l.customName || platformNames[platform] || "Lien").replace(/\s+/g, "_");
+
+          if (platform === "website") {
+            websiteLine = `URL:${esc(url)}`;
+          } else if (platform === "location") {
+            mapsLine = `X-ADDRESS:${esc(url)}`;
+          } else if (platform === "gmail") {
+            socialLines.push(`EMAIL;TYPE=INTERNET:${esc(url.replace("mailto:", ""))}`);
+          } else if (["instagram", "linkedin", "facebook", "tiktok", "youtube"].includes(platform)) {
+            socialLines.push(`X-SOCIALPROFILE;TYPE=${platform}:${esc(url)}`);
+            socialLines.push(`URL;TYPE=${label}:${esc(url)}`);
+          } else {
+            socialLines.push(`URL;TYPE=${label}:${esc(url)}`);
+          }
+        });
+
+        const publicUrl = location.origin + "/?c=" + (data.slug || "");
+
+        // ─── Construction vCard ───
+        const vcardLines = [
+          "BEGIN:VCARD",
+          "VERSION:3.0",
           `FN;CHARSET=UTF-8:${esc(data.full_name || "")}`,
           `N;CHARSET=UTF-8:${esc(data.full_name || "")};;;;`,
           data.company ? `ORG;CHARSET=UTF-8:${esc(data.company)}` : "",
           data.job_title ? `TITLE;CHARSET=UTF-8:${esc(data.job_title)}` : "",
-          telEntries, photoLine, "END:VCARD"
-        ].filter(Boolean).join("\r\n");
+          telEntries,
+          photoLine,
+          websiteLine,
+          ...socialLines,
+          mapsLine,
+          `URL;TYPE=Carte_visite:${esc(publicUrl)}`,
+          `NOTE;CHARSET=UTF-8:Retrouvez ma carte de visite numérique : ${esc(publicUrl)}`,
+          "END:VCARD"
+        ].filter(Boolean);
 
+        const vcard = vcardLines.join("\r\n");
+
+        // ─── Envoi au téléphone ───
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
@@ -326,6 +385,7 @@
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 5000);
         showToast("📁 Fichier .vcf téléchargé");
+
       } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = orig; }
       }
@@ -381,7 +441,7 @@
         const { error } = await supabase.auth.signInWithPassword({ email, password });
 
         if (error) {
-          err.textContent = "Email ou mot de passe incorrect (" + error.message + ")";
+          err.textContent = "Email ou mot de passe incorrect.";
           err.classList.remove("hidden");
           btn.disabled = false;
           btn.textContent = "Se connecter";
@@ -563,7 +623,6 @@
             <p class="text-xs text-slate-500 mt-1">Session admin active.</p>
           </div>
 
-          <!-- ✨ MODULE NFC -->
           <div class="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 p-4 rounded-2xl mb-6">
             <div class="flex items-center justify-between mb-1">
               <span class="text-xs font-black uppercase text-emerald-900 tracking-wider">
@@ -724,7 +783,6 @@
       current.custom_links.forEach(l => addLinkRow(l.platform, l.url, l.customName || ""));
       document.getElementById("add-link-btn").onclick = () => addLinkRow("instagram", "");
 
-      // ✨ Connexion du bouton NFC
       document.getElementById("btn-nfc-standalone").onclick = () => {
         const slug = document.getElementById("slug").value.trim().toLowerCase();
         if (!slug) {
