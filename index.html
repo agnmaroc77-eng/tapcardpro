@@ -84,7 +84,10 @@
             }
             const canvas = document.createElement("canvas");
             canvas.width = width; canvas.height = height;
-            canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+            const ctx = canvas.getContext("2d");
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+            ctx.drawImage(img, 0, 0, width, height);
             canvas.toBlob(b => resolve(b), "image/jpeg", quality);
           };
           img.onerror = reject;
@@ -97,8 +100,8 @@
 
     async function uploadImage(file, prefix) {
       if (!file) return null;
-      const blob = await compressImage(file, prefix === "banner" ? 1200 : 400,
-                                              prefix === "banner" ? 0.82 : 0.85);
+      const blob = await compressImage(file, prefix === "banner" ? 1200 : 600,
+                                              prefix === "banner" ? 0.85 : 0.92);
       const name = `${prefix}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
       const { error } = await supabase.storage.from(BUCKET).upload(name, blob, {
         contentType: "image/jpeg", cacheControl: "31536000"
@@ -109,24 +112,34 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // 🆕 CONVERSION PHOTO URL → BASE64 POUR V-CARD
-    // Télécharge l'image depuis Supabase Storage et la convertit
-    // en base64 pour l'insérer dans le contact.
+    // CONVERSION PHOTO URL → BASE64 (via fetch, haute qualité)
     // ═══════════════════════════════════════════════════════════
     async function urlToVCardPhoto(imageUrl) {
       if (!imageUrl) return "";
       try {
-        // Charger l'image depuis l'URL
-        const img = await new Promise((resolve, reject) => {
-          const i = new Image();
-          i.crossOrigin = "anonymous";
-          i.onload = () => resolve(i);
-          i.onerror = reject;
-          i.src = imageUrl;
+        const response = await fetch(imageUrl, { mode: "cors" });
+        if (!response.ok) {
+          console.warn("Échec téléchargement photo:", response.status);
+          return "";
+        }
+        const blob = await response.blob();
+
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
         });
 
-        // Redimensionner à 200x200 max (les contacts n'ont pas besoin de plus)
-        const maxSize = 200;
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.onload = () => resolve(i);
+          i.onerror = reject;
+          i.src = dataUrl;
+        });
+
+        // 400x400 max — qualité élevée, taille raisonnable
+        const maxSize = 400;
         let { width, height } = img;
         if (width > height && width > maxSize) {
           height = Math.round((height * maxSize) / width);
@@ -139,16 +152,18 @@
         const canvas = document.createElement("canvas");
         canvas.width = width;
         canvas.height = height;
-        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        const ctx = canvas.getContext("2d");
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(img, 0, 0, width, height);
 
-        // Convertir en JPEG base64
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-        const match = dataUrl.match(/^data:image\/[a-zA-Z+]+;base64,(.+)$/);
+        const resized = canvas.toDataURL("image/jpeg", 0.92);
+        const match = resized.match(/^data:image\/[a-zA-Z+]+;base64,(.+)$/);
         if (!match) return "";
 
         return `PHOTO;ENCODING=b;TYPE=JPEG:${match[1]}`;
       } catch (err) {
-        console.warn("Photo non intégrée au contact :", err);
+        console.warn("Photo non intégrée :", err);
         return "";
       }
     }
@@ -304,45 +319,36 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // V-CARD AVEC PHOTO + RÉSEAUX SOCIAUX
+    // V-CARD AVEC PHOTO HAUTE QUALITÉ + LIENS LABELLISÉS
     // ═══════════════════════════════════════════════════════════
     async function saveContactDirect(data) {
       const btn = document.getElementById("save-contact-btn");
       const orig = btn ? btn.innerHTML : "";
-      if (btn) { btn.disabled = true; btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Ouverture...`; }
+      if (btn) { btn.disabled = true; btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Préparation...`; }
 
       try {
         const phones = Array.isArray(data.phones) ? data.phones : (data.phone ? [{ type: "CELL", number: data.phone }] : []);
         const esc = v => String(v || "").replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n");
 
-        // ─── Photo (nouvelle logique : URL OU base64) ───
+        // ─── Photo ───
         let photoLine = "";
         const avatarData = data.avatar || (data.links && data.links.avatar);
         if (avatarData) {
-          if (avatarData.startsWith("data:image")) {
-            // Base64 legacy (au cas où)
-            const m = avatarData.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
-            if (m) {
-              let t = "JPEG";
-              if (m[1].includes("png")) t = "PNG";
-              else if (m[1].includes("gif")) t = "GIF";
-              else if (m[1].includes("webp")) t = "WEBP";
-              photoLine = `PHOTO;ENCODING=b;TYPE=${t}:${m[2]}`;
-            }
-          } else if (avatarData.startsWith("http")) {
-            // Nouvelle logique : URL Supabase → conversion en base64
+          if (avatarData.startsWith("http")) {
             photoLine = await urlToVCardPhoto(avatarData);
+          } else if (avatarData.startsWith("data:image")) {
+            const m = avatarData.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+            if (m) photoLine = `PHOTO;ENCODING=b;TYPE=JPEG:${m[2]}`;
           }
         }
 
         // ─── Téléphones ───
         const telEntries = phones.map(p => `TEL;TYPE=CELL:${esc(p.number)}`).join("\r\n");
 
-        // ─── Réseaux sociaux & liens ───
+        // ─── Liens avec labels personnalisés ───
         const customLinks = (data.links && data.links.custom_links) || [];
-        const socialLines = [];
-        let websiteLine = "";
-        let mapsLine = "";
+        const linkLines = [];
+        let itemIdx = 1;
 
         const prefixes = {
           instagram: "https://instagram.com/",
@@ -358,8 +364,8 @@
 
         const platformNames = {
           instagram: "Instagram", linkedin: "LinkedIn", facebook: "Facebook",
-          tiktok: "TikTok", youtube: "YouTube", gmail: "Gmail",
-          website: "Site_web", location: "Localisation", other: "Lien"
+          tiktok: "TikTok", youtube: "YouTube", gmail: "Email",
+          website: "Site Web", location: "Adresse", other: "Lien"
         };
 
         customLinks.forEach(l => {
@@ -372,23 +378,17 @@
             url = pfx + url.replace(/^@/, "");
           }
 
-          const label = (l.customName || platformNames[platform] || "Lien").replace(/\s+/g, "_");
+          const label = l.customName || platformNames[platform] || "Lien";
 
-          if (platform === "website") {
-            websiteLine = `URL:${esc(url)}`;
-          } else if (platform === "location") {
-            mapsLine = `X-ADDRESS:${esc(url)}`;
-          } else if (platform === "gmail") {
-            socialLines.push(`EMAIL;TYPE=INTERNET:${esc(url.replace("mailto:", ""))}`);
-          } else if (["instagram", "linkedin", "facebook", "tiktok", "youtube"].includes(platform)) {
-            socialLines.push(`X-SOCIALPROFILE;TYPE=${platform}:${esc(url)}`);
-            socialLines.push(`URL;TYPE=${label}:${esc(url)}`);
-          } else {
-            socialLines.push(`URL;TYPE=${label}:${esc(url)}`);
-          }
+          // Format moderne avec label personnalisé
+          linkLines.push(`item${itemIdx}.URL:${esc(url)}`);
+          linkLines.push(`item${itemIdx}.X-ABLabel:${esc(label)}`);
+          itemIdx++;
         });
 
+        // ─── Lien de la carte en NOTE uniquement ───
         const publicUrl = location.origin + "/?c=" + (data.slug || "");
+        const noteLine = `NOTE;CHARSET=UTF-8:Retrouvez ma carte de visite numérique : ${esc(publicUrl)}`;
 
         // ─── Construction vCard ───
         const vcardLines = [
@@ -400,11 +400,8 @@
           data.job_title ? `TITLE;CHARSET=UTF-8:${esc(data.job_title)}` : "",
           telEntries,
           photoLine,
-          websiteLine,
-          ...socialLines,
-          mapsLine,
-          `URL;TYPE=Carte_visite:${esc(publicUrl)}`,
-          `NOTE;CHARSET=UTF-8:Retrouvez ma carte de visite numérique : ${esc(publicUrl)}`,
+          ...linkLines,
+          noteLine,
           "END:VCARD"
         ].filter(Boolean);
 
@@ -708,7 +705,7 @@
                 </div>
               </div>
               <div>
-                <label class="text-xs font-semibold text-slate-600 block mb-1">2. Photo de profil ou logo</label>
+                <label class="text-xs font-semibold text-slate-600 block mb-1">2. Photo de profil ou logo (carré recommandé)</label>
                 <input type="file" id="avatar-input" accept="image/*" class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
                 <div id="avatar-preview" class="mt-2 w-16 h-16 rounded-full overflow-hidden border-2 border-slate-200 ${current.avatar ? "" : "hidden"}">
                   <img src="${current.avatar}" class="w-full h-full object-cover">
@@ -749,7 +746,7 @@
                 <span class="text-xs font-black text-slate-600 uppercase tracking-wider">Réseaux & Liens</span>
                 <button type="button" id="add-link-btn" class="text-xs font-bold text-blue-600"><i class="fa-solid fa-plus mr-1"></i>Ajouter</button>
               </div>
-              <p class="text-[10px] text-slate-400 mb-2">💡 « Localisation » = adresse Google Maps.</p>
+              <p class="text-[10px] text-slate-400 mb-2">💡 Choisissez bien la plateforme (Instagram, Facebook…) et mettez uniquement votre pseudo (sans @).</p>
               <div id="links-container" class="space-y-2"></div>
             </div>
 
@@ -825,10 +822,10 @@
             <select class="w-1/3 p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold">
               ${Object.keys(PLATFORMS).map(k => `<option value="${k}" ${k === platform ? "selected" : ""}>${PLATFORMS[k].name}</option>`).join("")}
             </select>
-            <input type="text" value="${url}" class="link-url flex-1 p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold" placeholder="Lien ou @pseudo">
+            <input type="text" value="${url}" class="link-url flex-1 p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold" placeholder="ex: monpseudo (sans @)">
             <button type="button" class="text-slate-400 hover:text-red-500 px-2 py-1" onclick="this.parentElement.parentElement.remove()"><i class="fa-solid fa-trash text-xs"></i></button>
           </div>
-          <input type="text" value="${customName}" class="link-desc w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold" placeholder="Description (ex: bureau Casablanca)">`;
+          <input type="text" value="${customName}" class="link-desc w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold" placeholder="Description optionnelle (ex: bureau Casablanca)">`;
         linksBox.appendChild(div);
       }
       current.custom_links.forEach(l => addLinkRow(l.platform, l.url, l.customName || ""));
