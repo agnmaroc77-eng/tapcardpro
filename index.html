@@ -138,7 +138,6 @@
           i.src = dataUrl;
         });
 
-        // 400x400 max — qualité élevée, taille raisonnable
         const maxSize = 400;
         let { width, height } = img;
         if (width > height && width > maxSize) {
@@ -204,6 +203,80 @@
         }
         alert("❌ Erreur d'écriture NFC :\n\n" + err.message);
       }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // ✨ NOUVEAU : MODALE DE VÉRIFICATION ADMIN
+    // Utilisée avant la suppression d'une carte
+    // ═══════════════════════════════════════════════════════════
+    function promptAdminVerification(actionTitle, onSuccess) {
+      const modal = document.createElement("div");
+      modal.style.cssText = `
+        position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9998;
+        display:flex;align-items:center;justify-content:center;padding:20px;
+        backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);`;
+      modal.innerHTML = `
+        <div style="background:#fff;border-radius:24px;max-width:400px;width:100%;padding:26px;
+                    box-shadow:0 20px 60px rgba(0,0,0,.35);animation:pop .2s ease;">
+          <div class="text-center mb-4">
+            <div class="w-12 h-12 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3 text-red-600 text-lg">
+              <i class="fa-solid fa-shield-halved"></i>
+            </div>
+            <h3 class="text-lg font-black text-slate-900">Confirmation requise</h3>
+            <p class="text-xs text-slate-500 mt-1">${actionTitle}</p>
+          </div>
+          <div id="verify-error" class="hidden text-xs text-red-600 bg-red-50 border border-red-200 p-2.5 rounded-xl mb-3 font-semibold"></div>
+          <form id="verifyForm" class="space-y-3">
+            <input type="email" id="verifyEmail" required autocomplete="username"
+              class="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-600"
+              placeholder="Email administrateur">
+            <input type="password" id="verifyPassword" required autocomplete="current-password"
+              class="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-600"
+              placeholder="Mot de passe">
+            <div class="flex gap-2 pt-2">
+              <button type="button" id="verifyCancel"
+                class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl text-sm">
+                Annuler
+              </button>
+              <button type="submit" id="verifySubmit"
+                class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl text-sm">
+                Confirmer
+              </button>
+            </div>
+          </form>
+        </div>
+        <style>@keyframes pop{from{transform:scale(.95);opacity:0}to{transform:scale(1);opacity:1}}</style>
+      `;
+      document.body.appendChild(modal);
+
+      const close = () => modal.remove();
+      document.getElementById("verifyCancel").onclick = close;
+
+      document.getElementById("verifyForm").onsubmit = async (e) => {
+        e.preventDefault();
+        const err = document.getElementById("verify-error");
+        const submit = document.getElementById("verifySubmit");
+        err.classList.add("hidden");
+        submit.disabled = true;
+        submit.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i>`;
+
+        const email = document.getElementById("verifyEmail").value.trim();
+        const password = document.getElementById("verifyPassword").value;
+
+        // Vérification réelle via Supabase Auth
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+        if (error) {
+          err.textContent = "Email ou mot de passe incorrect.";
+          err.classList.remove("hidden");
+          submit.disabled = false;
+          submit.textContent = "Confirmer";
+          return;
+        }
+
+        close();
+        onSuccess();
+      };
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -319,7 +392,8 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // V-CARD AVEC PHOTO HAUTE QUALITÉ + LIENS LABELLISÉS
+    // V-CARD — CORRIGÉ POUR iPHONE
+    // Utilise Web Share API en priorité (fonctionne sur iOS 15+)
     // ═══════════════════════════════════════════════════════════
     async function saveContactDirect(data) {
       const btn = document.getElementById("save-contact-btn");
@@ -380,17 +454,14 @@
 
           const label = l.customName || platformNames[platform] || "Lien";
 
-          // Format moderne avec label personnalisé
           linkLines.push(`item${itemIdx}.URL:${esc(url)}`);
           linkLines.push(`item${itemIdx}.X-ABLabel:${esc(label)}`);
           itemIdx++;
         });
 
-        // ─── Lien de la carte en NOTE uniquement ───
         const publicUrl = location.origin + "/?c=" + (data.slug || "");
         const noteLine = `NOTE;CHARSET=UTF-8:Retrouvez ma carte de visite numérique : ${esc(publicUrl)}`;
 
-        // ─── Construction vCard ───
         const vcardLines = [
           "BEGIN:VCARD",
           "VERSION:3.0",
@@ -407,33 +478,55 @@
 
         const vcard = vcardLines.join("\r\n");
 
-        // ─── Envoi au téléphone ───
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-                     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-
-        if (isIOS) {
-          const a = document.createElement("a");
-          a.href = "data:text/vcard;charset=utf-8," + encodeURIComponent(vcard);
-          document.body.appendChild(a); a.click(); document.body.removeChild(a);
-          return;
-        }
-
         const fileName = (data.full_name || data.slug || "contact").replace(/\s+/g, "_") + ".vcf";
-        const file = new File([vcard], fileName, { type: "text/vcard" });
+        const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
+        const file = new File([blob], fileName, { type: "text/vcard" });
 
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          showToast("👉 Choisissez « Contacts » dans le menu qui s'ouvre");
-          try { await navigator.share({ files: [file], title: data.full_name || "Contact" }); return; }
-          catch (e) { if (e.name === "AbortError") return; }
+        // ═══════════════════════════════════════════════════════════
+        // ✨ CORRECTION iPHONE : On utilise navigator.share EN PRIORITÉ
+        // Sur iOS 15+ et Android, l'utilisateur choisit « Contacts »
+        // dans la feuille de partage → le contact est créé directement.
+        // ═══════════════════════════════════════════════════════════
+        if (navigator.share) {
+          let canShareFile = false;
+          if (navigator.canShare) {
+            try { canShareFile = navigator.canShare({ files: [file] }); }
+            catch (_) { canShareFile = false; }
+          }
+
+          if (canShareFile) {
+            showToast("👉 Choisissez « Contacts » dans le menu qui s'ouvre");
+            try {
+              await navigator.share({
+                files: [file],
+                title: data.full_name || "Contact",
+                text: `Contact : ${data.full_name || ""}`
+              });
+              return;
+            } catch (e) {
+              if (e.name === "AbortError") return;
+              console.warn("Partage annulé ou échoué :", e);
+            }
+          }
         }
 
-        const url = URL.createObjectURL(new Blob([vcard], { type: "text/x-vcard;charset=utf-8" }));
+        // ═══════════════════════════════════════════════════════════
+        // FALLBACK : Téléchargement direct (Android ancien, PC, etc.)
+        // ═══════════════════════════════════════════════════════════
+        const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href = url; a.download = fileName;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        a.href = url;
+        a.download = fileName;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 5000);
-        showToast("📁 Fichier .vcf téléchargé");
+        showToast("📁 Fichier .vcf téléchargé — tapez dessus pour l'ajouter à vos contacts");
 
+      } catch (err) {
+        console.error(err);
+        showToast("❌ Impossible de générer le contact : " + err.message, 5000);
       } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = orig; }
       }
@@ -599,14 +692,25 @@
           catch { prompt("Copiez ce lien :", b.dataset.copy); }
         });
 
-        box.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
-          if (!confirm(`Supprimer définitivement la carte de « ${b.dataset.name} » ?`)) return;
-          const { error } = await supabase.from("cards").delete().eq("slug", b.dataset.del);
-          if (error) { showToast("❌ " + error.message, 5000); return; }
-          allClients = allClients.filter(x => x.slug !== b.dataset.del);
-          document.getElementById("clients-count").textContent = allClients.length;
-          renderRows(allClients.filter(matches));
-          showToast("🗑️ Carte supprimée");
+        // ═══════════════════════════════════════════════════════════
+        // ✨ SUPPRESSION AVEC VÉRIFICATION ADMIN
+        // L'utilisateur doit confirmer son identité avant de supprimer
+        // ═══════════════════════════════════════════════════════════
+        box.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
+          const cardName = b.dataset.name;
+          const cardSlug = b.dataset.del;
+
+          promptAdminVerification(
+            `Supprimer définitivement la carte de « ${cardName} » ?<br><span class="text-red-600 font-bold">Cette action est irréversible.</span>`,
+            async () => {
+              const { error } = await supabase.from("cards").delete().eq("slug", cardSlug);
+              if (error) { showToast("❌ " + error.message, 5000); return; }
+              allClients = allClients.filter(x => x.slug !== cardSlug);
+              document.getElementById("clients-count").textContent = allClients.length;
+              renderRows(allClients.filter(matches));
+              showToast("🗑️ Carte supprimée");
+            }
+          );
         });
       }
 
