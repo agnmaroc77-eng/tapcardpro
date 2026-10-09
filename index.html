@@ -1,36 +1,1025 @@
-if (isIOS) {
-  // iOS 15+ : Web Share API (le plus fiable)
-  const iosBlob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
-  const iosFile = new File([iosBlob], fileName, { type: "text/vcard" });
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TAPCARD • Cartes Connectées NFC</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col items-center justify-center p-3 sm:p-6 font-sans antialiased text-slate-800">
 
-  let canShareFile = false;
-  if (navigator.canShare) {
-    try { canShareFile = navigator.canShare({ files: [iosFile] }); }
-    catch (_) { canShareFile = false; }
-  }
+  <header class="w-full max-w-md flex justify-between items-center py-4 mb-2">
+    <a href="/" class="flex items-center gap-2">
+      <span class="text-2xl font-black tracking-tight text-slate-900">TAP<span class="text-blue-600">CARD</span></span>
+      <i class="fa-solid fa-wifi rotate-90 text-blue-600 text-sm"></i>
+    </a>
+    <div id="nav-actions"></div>
+  </header>
 
-  if (canShareFile && navigator.share) {
-    showToast("📇 Choisissez « Contacts » dans le menu", 5000);
-    try {
-      await navigator.share({
-        files: [iosFile],
-        title: data.full_name || "Contact"
-      });
-      return;
-    } catch (e) {
-      if (e.name === "AbortError") return;
-      console.warn("Partage iOS annulé :", e);
+  <main id="root" class="w-full max-w-md flex flex-col items-center">
+    <div id="boot" class="p-8 bg-white rounded-3xl shadow-sm text-center text-slate-500">
+      <i class="fa-solid fa-circle-notch fa-spin text-2xl text-blue-600 mb-3"></i><br>Démarrage…
+    </div>
+  </main>
+
+  <footer class="mt-8 text-xs text-slate-400 text-center">
+    Propulsé par TAPCARD • Solution NFC Universelle
+  </footer>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+    const SUPABASE_URL = "https://xswrejpkgqcffdizrvut.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_ttAdLhtxOSDna58bSYJp7g_GlamHlNm";
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const BUCKET = "media";
+
+    const boot = document.getElementById("boot");
+    if (boot) boot.remove();
+
+    const PALETTES = {
+      blue:    { hex: "#2563eb", btn: "bg-blue-600 hover:bg-blue-700",       border: "border-blue-500"    },
+      emerald: { hex: "#10b981", btn: "bg-emerald-600 hover:bg-emerald-700", border: "border-emerald-500" },
+      dark:    { hex: "#0f172a", btn: "bg-slate-900 hover:bg-slate-800",     border: "border-slate-800"   },
+      teal:    { hex: "#0d9488", btn: "bg-teal-600 hover:bg-teal-700",       border: "border-teal-500"    }
+    };
+
+    const PLATFORMS = {
+      instagram: { name: "Instagram", icon: "fa-brands fa-instagram", color: "text-pink-600",    bg: "bg-pink-50",    border: "border-pink-100",    prefix: "https://instagram.com/" },
+      linkedin:  { name: "LinkedIn",  icon: "fa-brands fa-linkedin",  color: "text-blue-700",    bg: "bg-blue-50",    border: "border-blue-100",    prefix: "https://linkedin.com/in/" },
+      facebook:  { name: "Facebook",  icon: "fa-brands fa-facebook",  color: "text-blue-800",    bg: "bg-indigo-50",  border: "border-indigo-100",  prefix: "https://facebook.com/" },
+      tiktok:    { name: "TikTok",    icon: "fa-brands fa-tiktok",    color: "text-slate-900",   bg: "bg-slate-100",  border: "border-slate-200",   prefix: "https://tiktok.com/@" },
+      youtube:   { name: "YouTube",   icon: "fa-brands fa-youtube",   color: "text-red-600",     bg: "bg-red-50",     border: "border-red-100",     prefix: "https://youtube.com/" },
+      gmail:     { name: "Gmail",     icon: "fa-solid fa-envelope",   color: "text-red-600",     bg: "bg-red-50",     border: "border-red-100",     prefix: "mailto:" },
+      location:  { name: "Localisation", icon: "fa-solid fa-location-dot", color: "text-orange-600", bg: "bg-orange-50", border: "border-orange-100", prefix: "" },
+      website:   { name: "Site Web",  icon: "fa-solid fa-globe",      color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100", prefix: "" },
+      other:     { name: "Autre lien", icon: "fa-solid fa-link",      color: "text-slate-600",   bg: "bg-slate-50",   border: "border-slate-200",   prefix: "" }
+    };
+
+    const getParam = k => new URLSearchParams(location.search).get(k);
+
+    function showToast(msg, duration = 4000) {
+      const t = document.createElement("div");
+      t.textContent = msg;
+      t.style.cssText = "position:fixed;bottom:24px;left:50%;transform:translateX(-50%);" +
+        "background:#0f172a;color:white;padding:12px 18px;border-radius:14px;font-size:12px;" +
+        "z-index:9999;box-shadow:0 10px 30px rgba(0,0,0,.25);max-width:90vw;text-align:center;font-weight:600;";
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), duration);
     }
-  }
 
-  // Fallback iOS < 15 : data URL avec download
-  const dataUrl = "data:text/vcard;charset=utf-8," + encodeURIComponent(vcard);
-  const a = document.createElement("a");
-  a.href = dataUrl;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  showToast("📇 Ouvrez le fichier depuis vos téléchargements");
-  return;
-}
+    function compressImage(file, maxSize = 400, quality = 0.85) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const img = new Image();
+          img.onload = () => {
+            let { width, height } = img;
+            if (width > height && width > maxSize) {
+              height = Math.round((height * maxSize) / width); width = maxSize;
+            } else if (height > maxSize) {
+              width = Math.round((width * maxSize) / height); height = maxSize;
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = width; canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob(b => resolve(b), "image/jpeg", quality);
+          };
+          img.onerror = reject;
+          img.src = ev.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function uploadImage(file, prefix) {
+      if (!file) return null;
+      const blob = await compressImage(file, prefix === "banner" ? 1200 : 600,
+                                              prefix === "banner" ? 0.85 : 0.92);
+      const name = prefix + "/" + Date.now() + "-" + Math.random().toString(36).slice(2, 8) + ".jpg";
+      const { error } = await supabase.storage.from(BUCKET).upload(name, blob, {
+        contentType: "image/jpeg", cacheControl: "31536000"
+      });
+      if (error) throw error;
+      const { data } = supabase.storage.from(BUCKET).getPublicUrl(name);
+      return data.publicUrl;
+    }
+
+    /* Conversion photo URL vers base64 pour vCard */
+    async function urlToVCardPhoto(imageUrl) {
+      if (!imageUrl) return "";
+      try {
+        const response = await fetch(imageUrl, { mode: "cors" });
+        if (!response.ok) {
+          console.warn("Echec telechargement photo:", response.status);
+          return "";
+        }
+        const blob = await response.blob();
+
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.onload = () => resolve(i);
+          i.onerror = reject;
+          i.src = dataUrl;
+        });
+
+        const maxSize = 400;
+        let { width, height } = img;
+        if (width > height && width > maxSize) {
+          height = Math.round((height * maxSize) / width);
+          width = maxSize;
+        } else if (height > maxSize) {
+          width = Math.round((width * maxSize) / height);
+          height = maxSize;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const resized = canvas.toDataURL("image/jpeg", 0.92);
+        const match = resized.match(/^data:image\/[a-zA-Z+]+;base64,(.+)$/);
+        if (!match) return "";
+
+        return "PHOTO;ENCODING=b;TYPE=JPEG:" + match[1];
+      } catch (err) {
+        console.warn("Photo non integree :", err);
+        return "";
+      }
+    }
+
+    /* Module NFC */
+    async function writeNfcTag(customUrl = null) {
+      const targetUrl = customUrl || window.location.href;
+      const statusEl = document.getElementById("nfc-live-status");
+
+      if (!('NDEFReader' in window)) {
+        alert("L'ecriture NFC directe necessite Google Chrome sur Android avec NFC active.");
+        return;
+      }
+
+      try {
+        if (statusEl) {
+          statusEl.innerHTML = '<span class="text-blue-600 font-semibold animate-pulse"><i class="fa-solid fa-spinner fa-spin"></i> Approchez votre carte NFC...</span>';
+        }
+
+        const ndef = new NDEFReader();
+        await ndef.write({ records: [{ recordType: "url", data: targetUrl }] });
+
+        if (statusEl) {
+          statusEl.innerHTML = '<span class="text-emerald-700 font-bold"><i class="fa-solid fa-circle-check"></i> Carte NFC ecrite avec succes !</span>';
+        }
+        alert("Carte NFC programmee avec succes !\n\nElle ouvrira :\n" + targetUrl);
+
+      } catch (err) {
+        if (statusEl) {
+          statusEl.innerHTML = '<span class="text-red-600">Erreur : ' + err.message + '</span>';
+        }
+        alert("Erreur d'ecriture NFC :\n\n" + err.message);
+      }
+    }
+
+    /* Modale de verification admin avant suppression */
+    function promptAdminVerification(actionTitle, onSuccess) {
+      const modal = document.createElement("div");
+      modal.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9998;" +
+        "display:flex;align-items:center;justify-content:center;padding:20px;" +
+        "backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);";
+      modal.innerHTML = '<div style="background:#fff;border-radius:24px;max-width:400px;width:100%;padding:26px;' +
+                    'box-shadow:0 20px 60px rgba(0,0,0,.35);animation:pop .2s ease;">' +
+          '<div class="text-center mb-4">' +
+            '<div class="w-12 h-12 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3 text-red-600 text-lg">' +
+              '<i class="fa-solid fa-shield-halved"></i>' +
+            '</div>' +
+            '<h3 class="text-lg font-black text-slate-900">Confirmation requise</h3>' +
+            '<p class="text-xs text-slate-500 mt-1">' + actionTitle + '</p>' +
+          '</div>' +
+          '<div id="verify-error" class="hidden text-xs text-red-600 bg-red-50 border border-red-200 p-2.5 rounded-xl mb-3 font-semibold"></div>' +
+          '<form id="verifyForm" class="space-y-3">' +
+            '<input type="email" id="verifyEmail" required autocomplete="username" ' +
+              'class="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-600" ' +
+              'placeholder="Email administrateur">' +
+            '<input type="password" id="verifyPassword" required autocomplete="current-password" ' +
+              'class="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-600" ' +
+              'placeholder="Mot de passe">' +
+            '<div class="flex gap-2 pt-2">' +
+              '<button type="button" id="verifyCancel" ' +
+                'class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl text-sm">' +
+                'Annuler' +
+              '</button>' +
+              '<button type="submit" id="verifySubmit" ' +
+                'class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl text-sm">' +
+                'Confirmer' +
+              '</button>' +
+            '</div>' +
+          '</form>' +
+        '</div>' +
+        '<style>@keyframes pop{from{transform:scale(.95);opacity:0}to{transform:scale(1);opacity:1}}</style>';
+      document.body.appendChild(modal);
+
+      const close = () => modal.remove();
+      document.getElementById("verifyCancel").onclick = close;
+
+      document.getElementById("verifyForm").onsubmit = async (e) => {
+        e.preventDefault();
+        const err = document.getElementById("verify-error");
+        const submit = document.getElementById("verifySubmit");
+        err.classList.add("hidden");
+        submit.disabled = true;
+        submit.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>';
+
+        const email = document.getElementById("verifyEmail").value.trim();
+        const password = document.getElementById("verifyPassword").value;
+
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+        if (error) {
+          err.textContent = "Email ou mot de passe incorrect.";
+          err.classList.remove("hidden");
+          submit.disabled = false;
+          submit.textContent = "Confirmer";
+          return;
+        }
+
+        close();
+        onSuccess();
+      };
+    }
+
+    /* Vue publique */
+    async function renderProfile(slug) {
+      const root = document.getElementById("root");
+      root.innerHTML = '<div class="p-8 bg-white rounded-3xl shadow-sm text-center text-slate-500">' +
+        '<i class="fa-solid fa-circle-notch fa-spin text-2xl text-blue-600 mb-3"></i><br>Chargement...</div>';
+
+      try {
+        const { data: rows, error } = await supabase.from("cards").select("*").eq("slug", slug);
+        if (error) throw error;
+
+        if (!rows || rows.length === 0) {
+          root.innerHTML = '<div class="bg-white p-6 rounded-3xl text-center shadow-sm w-full border border-slate-200">' +
+            '<p class="text-red-500 font-semibold mb-2">Profil introuvable</p>' +
+            '<p class="text-sm text-slate-500">Cette carte n\'a pas encore ete configuree.</p></div>';
+          return;
+        }
+
+        const c = rows[0];
+        const dataLinks = (c.links && c.links.custom_links) || [];
+        const phones = (c.links && c.links.phones) || (c.phone ? [{ type: "Telephone", number: c.phone }] : []);
+        const bannerImg = c.links && c.links.banner;
+        const avatarImg = c.links && c.links.avatar;
+        const palette = PALETTES[c.accent_color] || PALETTES.blue;
+        const initial = c.full_name ? c.full_name.trim()[0].toUpperCase() : "T";
+
+        document.getElementById("nav-actions").innerHTML = "";
+
+        const phonesHtml = phones.length ? '<div class="space-y-2 mt-5 text-left">' +
+                '<div class="text-[11px] font-black text-slate-400 uppercase tracking-wider px-1">Telephones</div>' +
+                phones.map(p => {
+                  const tl = (p.type || "").toLowerCase();
+                  const isWA = tl.indexOf("whatsapp") >= 0 || tl === "wa";
+                  const isTG = tl.indexOf("telegram") >= 0;
+                  const clean = (p.number || "").replace(/[^\d]/g, "");
+                  let href, icon, iconColor, bg = "bg-slate-50 hover:bg-slate-100 border-slate-100", ext = false;
+                  if (isWA) {
+                    href = "https://wa.me/" + clean + "?text=" + encodeURIComponent("Bonjour " + (c.full_name || "") + ", je vous contacte via votre carte TAPCARD.");
+                    icon = "fa-brands fa-whatsapp"; iconColor = "text-emerald-600"; bg = "bg-emerald-50 hover:bg-emerald-100 border-emerald-100"; ext = true;
+                  } else if (isTG) {
+                    href = "https://t.me/+" + clean; icon = "fa-brands fa-telegram"; iconColor = "text-sky-600"; bg = "bg-sky-50 hover:bg-sky-100 border-sky-100"; ext = true;
+                  } else {
+                    href = "tel:" + p.number; icon = "fa-phone"; iconColor = "text-slate-600";
+                  }
+                  return '<a href="' + href + '" ' + (ext ? 'target="_blank" rel="noopener"' : '') + ' class="flex items-center justify-between p-3 ' + bg + ' rounded-2xl border transition">' +
+                    '<div class="flex items-center gap-3">' +
+                      '<div class="w-9 h-9 rounded-xl bg-white flex items-center justify-center ' + iconColor + ' shadow-sm border border-slate-100"><i class="fa-solid ' + icon + '"></i></div>' +
+                      '<div><div class="text-[10px] font-bold text-slate-400 uppercase">' + (p.type || "Numero") + '</div>' +
+                      '<div class="text-sm font-semibold text-slate-800">' + p.number + '</div></div>' +
+                    '</div>' +
+                    '<i class="fa-solid fa-arrow-up-right-from-square text-xs ' + iconColor + ' mr-2"></i></a>';
+                }).join("") +
+              '</div>' : "";
+
+        const linksHtml = dataLinks.length ? '<div class="space-y-2 mt-5 text-left">' +
+                '<div class="text-[11px] font-black text-slate-400 uppercase tracking-wider px-1">Liens & Reseaux</div>' +
+                dataLinks.map(l => {
+                  const pf = PLATFORMS[l.platform] || PLATFORMS.other;
+                  const isLoc = l.platform === "location";
+                  let url = (l.url || "").trim();
+                  if (!/^https?:\/\//.test(url) && !/^mailto:/.test(url)) {
+                    url = (pf.prefix || "https://") + url.replace(/^@/, "");
+                  }
+                  const label = isLoc ? pf.name : (l.customName || pf.name);
+                  const main = isLoc ? (l.customName || "Voir sur la carte") : l.url;
+                  return '<a href="' + url + '" target="_blank" class="flex items-center justify-between p-3 ' + pf.bg + ' rounded-2xl border ' + pf.border + ' hover:opacity-90 transition">' +
+                    '<div class="flex items-center gap-3">' +
+                      '<div class="w-9 h-9 rounded-xl bg-white flex items-center justify-center ' + pf.color + ' shadow-sm"><i class="' + pf.icon + ' text-lg"></i></div>' +
+                      '<div><div class="text-[10px] font-bold text-slate-400 uppercase">' + label + '</div>' +
+                      '<div class="text-xs font-semibold text-slate-800 truncate max-w-[200px]">' + main + '</div></div>' +
+                    '</div>' +
+                    '<i class="fa-solid fa-arrow-up-right-from-square text-xs ' + pf.color + ' mr-2"></i></a>';
+                }).join("") +
+              '</div>' : "";
+
+        root.innerHTML = '<div class="w-full bg-white rounded-[36px] overflow-hidden border border-slate-200 shadow-xl">' +
+            '<div class="relative w-full h-44 bg-slate-100">' +
+              (bannerImg
+                ? '<img src="' + bannerImg + '" class="w-full h-full object-cover">'
+                : '<div class="w-full h-full bg-gradient-to-r from-slate-700 to-slate-900"></div>') +
+              '<div class="absolute -bottom-12 left-1/2 -translate-x-1/2 z-10">' +
+                '<div class="w-24 h-24 rounded-full bg-white p-1 shadow-lg">' +
+                  '<div class="w-full h-full rounded-full overflow-hidden flex items-center justify-center bg-slate-100">' +
+                    (avatarImg
+                      ? '<img src="' + avatarImg + '" class="w-full h-full object-cover">'
+                      : '<span class="text-3xl font-black text-slate-700">' + initial + '</span>') +
+                  '</div>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+
+            '<div class="pt-16 pb-6 px-6 text-center">' +
+              '<h1 class="text-xl font-black text-slate-900 tracking-tight">' + (c.full_name || "") + '</h1>' +
+              '<p class="text-sm font-semibold text-slate-500 mt-0.5">' + (c.job_title || "") + '</p>' +
+              (c.company ? '<div class="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100 rounded-full text-xs font-bold text-slate-700 mt-2">' +
+                '<i class="fa-solid fa-building text-slate-400"></i> ' + c.company + '</div>' : "") +
+
+              '<button id="save-contact-btn" class="w-full ' + palette.btn + ' text-white font-bold py-3.5 px-4 rounded-2xl shadow-lg mt-5 flex items-center justify-center gap-2">' +
+                '<i class="fa-solid fa-address-card"></i> Ajouter a mes contacts' +
+              '</button>' +
+
+              phonesHtml +
+              linksHtml +
+            '</div>' +
+          '</div>';
+
+        document.getElementById("save-contact-btn").onclick = () => saveContactDirect(Object.assign({}, c, { phones: phones }));
+
+      } catch (e) {
+        root.innerHTML = '<div class="p-6 bg-red-50 text-red-600 rounded-2xl">Erreur : ' + e.message + '</div>';
+      }
+    }
+
+    /* vCard : iOS Web Share API, Android text/x-vcard */
+    async function saveContactDirect(data) {
+      const btn = document.getElementById("save-contact-btn");
+      const orig = btn ? btn.innerHTML : "";
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Preparation...'; }
+
+      try {
+        const phones = Array.isArray(data.phones) ? data.phones : (data.phone ? [{ type: "CELL", number: data.phone }] : []);
+        const esc = v => String(v || "").replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n");
+
+        /* Photo */
+        let photoLine = "";
+        const avatarData = data.avatar || (data.links && data.links.avatar);
+        if (avatarData) {
+          if (avatarData.indexOf("http") === 0) {
+            photoLine = await urlToVCardPhoto(avatarData);
+          } else if (avatarData.indexOf("data:image") === 0) {
+            const m = avatarData.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+            if (m) photoLine = "PHOTO;ENCODING=b;TYPE=JPEG:" + m[2];
+          }
+        }
+
+        /* Telephones */
+        const telEntries = phones.map(p => "TEL;TYPE=CELL:" + esc(p.number)).join("\r\n");
+
+        /* Liens */
+        const customLinks = (data.links && data.links.custom_links) || [];
+        const linkLines = [];
+        let itemIdx = 1;
+
+        const prefixes = {
+          instagram: "https://instagram.com/",
+          linkedin:  "https://linkedin.com/in/",
+          facebook:  "https://facebook.com/",
+          tiktok:    "https://tiktok.com/@",
+          youtube:   "https://youtube.com/",
+          gmail:     "mailto:",
+          website:   "",
+          location:  "",
+          other:     ""
+        };
+
+        const platformNames = {
+          instagram: "Instagram", linkedin: "LinkedIn", facebook: "Facebook",
+          tiktok: "TikTok", youtube: "YouTube", gmail: "Email",
+          website: "Site Web", location: "Adresse", other: "Lien"
+        };
+
+        customLinks.forEach(l => {
+          const platform = l.platform;
+          let url = (l.url || "").trim();
+          if (!url) return;
+
+          if (!/^https?:\/\//.test(url) && !/^mailto:/.test(url)) {
+            const pfx = prefixes[platform] || "https://";
+            url = pfx + url.replace(/^@/, "");
+          }
+
+          const label = l.customName || platformNames[platform] || "Lien";
+
+          linkLines.push("item" + itemIdx + ".URL:" + esc(url));
+          linkLines.push("item" + itemIdx + ".X-ABLabel:" + esc(label));
+          itemIdx++;
+        });
+
+        const publicUrl = location.origin + "/?c=" + (data.slug || "");
+        const noteLine = "NOTE;CHARSET=UTF-8:Retrouvez ma carte de visite numerique : " + esc(publicUrl);
+
+        const vcardLines = [
+          "BEGIN:VCARD",
+          "VERSION:3.0",
+          "FN;CHARSET=UTF-8:" + esc(data.full_name || ""),
+          "N;CHARSET=UTF-8:" + esc(data.full_name || "") + ";;;;",
+          data.company ? "ORG;CHARSET=UTF-8:" + esc(data.company) : "",
+          data.job_title ? "TITLE;CHARSET=UTF-8:" + esc(data.job_title) : "",
+          telEntries,
+          photoLine,
+          ...linkLines,
+          noteLine,
+          "END:VCARD"
+        ].filter(Boolean);
+
+        const vcard = vcardLines.join("\r\n");
+        const fileName = (data.full_name || data.slug || "contact").replace(/\s+/g, "_") + ".vcf";
+
+        const isAndroid = /Android/i.test(navigator.userAgent);
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+        /* iPHONE : Web Share API avec text/vcard */
+        if (isIOS) {
+          const iosBlob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
+          const iosFile = new File([iosBlob], fileName, { type: "text/vcard" });
+
+          let canShareFile = false;
+          if (navigator.canShare) {
+            try { canShareFile = navigator.canShare({ files: [iosFile] }); }
+            catch (_) { canShareFile = false; }
+          }
+
+          if (canShareFile && navigator.share) {
+            showToast("Choisissez Contacts dans le menu", 5000);
+            try {
+              await navigator.share({
+                files: [iosFile],
+                title: data.full_name || "Contact"
+              });
+              return;
+            } catch (e) {
+              if (e.name === "AbortError") return;
+              console.warn("Partage iOS annule :", e);
+            }
+          }
+
+          /* Fallback iOS < 15 */
+          const dataUrl = "data:text/vcard;charset=utf-8," + encodeURIComponent(vcard);
+          window.location.href = dataUrl;
+          showToast("Suivez les instructions pour ajouter le contact", 5000);
+          return;
+        }
+
+        /* ANDROID : text/x-vcard */
+        const blob = new Blob([vcard], { type: "text/x-vcard;charset=utf-8" });
+        const file = new File([blob], fileName, { type: "text/x-vcard" });
+
+        if (isAndroid && navigator.share && navigator.canShare) {
+          let canShareFile = false;
+          try { canShareFile = navigator.canShare({ files: [file] }); }
+          catch (_) { canShareFile = false; }
+
+          if (canShareFile) {
+            showToast("Choisissez Contacts dans le menu", 5000);
+            try {
+              await navigator.share({
+                files: [file],
+                title: data.full_name || "Contact",
+                text: "Contact : " + (data.full_name || "")
+              });
+              return;
+            } catch (e) {
+              if (e.name === "AbortError") return;
+              console.warn("Partage annule :", e);
+            }
+          }
+        }
+
+        /* FALLBACK : telechargement direct */
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.type = "text/x-vcard";
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        showToast("Contact telecharge");
+
+      } catch (err) {
+        console.error(err);
+        showToast("Impossible de generer le contact : " + err.message, 5000);
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+      }
+    }
+
+    /* Authentification */
+    async function getSession() {
+      const { data: { session } } = await supabase.auth.getSession();
+      return session;
+    }
+
+    function renderLoginScreen(onSuccess) {
+      const root = document.getElementById("root");
+      document.getElementById("nav-actions").innerHTML = "";
+
+      root.innerHTML = '<div class="bg-white p-8 rounded-[36px] shadow-sm border border-slate-200 w-full text-center">' +
+          '<div class="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-slate-700 text-xl shadow-sm">' +
+            '<i class="fa-solid fa-lock"></i>' +
+          '</div>' +
+          '<h2 class="text-xl font-black text-slate-900">Espace Administrateur</h2>' +
+          '<p class="text-xs text-slate-500 mt-1 mb-6">Acces securise par Supabase Auth.</p>' +
+
+          '<div id="login-error" class="hidden text-xs text-red-600 bg-red-50 border border-red-200 p-2.5 rounded-xl mb-4 font-semibold"></div>' +
+
+          '<form id="authForm" class="space-y-3">' +
+            '<input type="email" id="loginEmail" required autofocus ' +
+              'class="w-full p-3.5 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-600" ' +
+              'placeholder="Email administrateur">' +
+            '<input type="password" id="loginPassword" required ' +
+              'class="w-full p-3.5 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-600" ' +
+              'placeholder="Mot de passe">' +
+            '<button type="submit" id="loginSubmit" ' +
+              'class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl transition text-sm">' +
+              'Se connecter' +
+            '</button>' +
+          '</form>' +
+        '</div>';
+
+      document.getElementById("authForm").onsubmit = async (e) => {
+        e.preventDefault();
+        const err = document.getElementById("login-error");
+        const btn = document.getElementById("loginSubmit");
+        err.classList.add("hidden");
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Connexion...';
+
+        const email = document.getElementById("loginEmail").value.trim();
+        const password = document.getElementById("loginPassword").value;
+
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+        if (error) {
+          err.textContent = "Email ou mot de passe incorrect.";
+          err.classList.remove("hidden");
+          btn.disabled = false;
+          btn.textContent = "Se connecter";
+          return;
+        }
+        onSuccess();
+      };
+    }
+
+    function mountLogoutButton() {
+      document.getElementById("nav-actions").innerHTML = '<button id="btn-logout" class="text-xs bg-white border border-slate-200 px-3 py-1.5 rounded-full text-red-600 font-semibold hover:bg-red-50 shadow-sm">' +
+          '<i class="fa-solid fa-right-from-bracket mr-1"></i> Quitter' +
+        '</button>';
+      document.getElementById("btn-logout").onclick = async () => {
+        await supabase.auth.signOut();
+        location.href = "/";
+      };
+    }
+
+    /* Liste des clients */
+    async function renderClientsList() {
+      const root = document.getElementById("root");
+      mountLogoutButton();
+
+      root.innerHTML = '<div class="bg-white p-5 sm:p-6 rounded-[36px] shadow-sm border border-slate-200 w-full mb-8">' +
+          '<div class="flex justify-between items-center mb-4">' +
+            '<div>' +
+              '<h2 class="text-xl font-black text-slate-900 tracking-tight">Mes clients</h2>' +
+              '<p class="text-xs text-slate-500 mt-0.5"><span id="clients-count">...</span> carte(s)</p>' +
+            '</div>' +
+            '<a href="?edit=new" class="bg-slate-900 hover:bg-slate-800 text-white font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow transition">' +
+              '<i class="fa-solid fa-plus"></i> Nouveau' +
+            '</a>' +
+          '</div>' +
+          '<div class="relative mb-4">' +
+            '<i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>' +
+            '<input type="text" id="search-input" placeholder="Rechercher..." ' +
+              'class="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-500">' +
+          '</div>' +
+          '<div id="clients-list" class="space-y-2">' +
+            '<div class="text-center text-slate-400 text-xs py-8"><i class="fa-solid fa-circle-notch fa-spin"></i> Chargement...</div>' +
+          '</div>' +
+        '</div>';
+
+      let allClients = [];
+      try {
+        const { data, error } = await supabase.from("cards").select("*").order("created_at", { ascending: false });
+        if (error) throw error;
+        allClients = data || [];
+      } catch (e) {
+        document.getElementById("clients-list").innerHTML =
+          '<div class="text-center text-red-500 text-xs py-8">Erreur : ' + e.message + '</div>';
+        return;
+      }
+
+      document.getElementById("clients-count").textContent = allClients.length;
+      let query = "";
+
+      const matches = c => {
+        if (!query) return true;
+        const q = query.toLowerCase();
+        return [c.full_name, c.company, c.slug, c.job_title].filter(Boolean)
+          .some(v => String(v).toLowerCase().indexOf(q) >= 0);
+      };
+
+      function renderRows(list) {
+        const box = document.getElementById("clients-list");
+        if (!list.length) {
+          box.innerHTML = '<div class="text-center text-slate-400 text-xs py-10">' +
+            '<i class="fa-solid fa-address-book text-2xl mb-2 opacity-40"></i><br>' +
+            'Aucun client pour le moment.<br>' +
+            '<a href="?edit=new" class="text-blue-600 font-semibold underline mt-2 inline-block">Creer ma premiere carte</a></div>';
+          return;
+        }
+        box.innerHTML = list.map(c => {
+          const name = c.full_name || "Sans nom";
+          const sub = [c.job_title, c.company].filter(Boolean).join(" . ") || "—";
+          const init = name.trim()[0] ? name.trim()[0].toUpperCase() : "T";
+          const avatar = c.links && c.links.avatar;
+          const url = location.origin + "/?c=" + c.slug;
+          return '<div class="flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 transition">' +
+              '<div class="w-11 h-11 rounded-full overflow-hidden bg-white border border-slate-200 flex items-center justify-center flex-shrink-0">' +
+                (avatar ? '<img src="' + avatar + '" class="w-full h-full object-cover">'
+                        : '<span class="text-base font-black text-slate-500">' + init + '</span>') +
+              '</div>' +
+              '<div class="flex-1 min-w-0">' +
+                '<div class="text-sm font-bold text-slate-900 truncate">' + name + '</div>' +
+                '<div class="text-xs text-slate-500 truncate">' + sub + '</div>' +
+                '<div class="text-[10px] font-mono text-slate-400 mt-0.5 truncate">?c=' + c.slug + '</div>' +
+              '</div>' +
+              '<div class="flex items-center gap-1 flex-shrink-0">' +
+                '<a href="' + url + '" target="_blank" title="Voir" class="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:text-blue-600 hover:border-blue-300 transition"><i class="fa-solid fa-eye text-xs"></i></a>' +
+                '<a href="?edit=' + c.slug + '" title="Modifier" class="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:text-amber-600 hover:border-amber-300 transition"><i class="fa-solid fa-pen text-xs"></i></a>' +
+                '<button data-copy="' + url + '" title="Copier" class="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:text-emerald-600 hover:border-emerald-300 transition"><i class="fa-solid fa-link text-xs"></i></button>' +
+                '<button data-del="' + c.slug + '" data-name="' + name + '" title="Supprimer" class="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:text-red-600 hover:border-red-300 transition"><i class="fa-solid fa-trash text-xs"></i></button>' +
+              '</div>' +
+            '</div>';
+        }).join("");
+
+        box.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => {
+          try { await navigator.clipboard.writeText(b.dataset.copy); showToast("Lien copie", 2500); }
+          catch { prompt("Copiez ce lien :", b.dataset.copy); }
+        });
+
+        box.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
+          const cardName = b.dataset.name;
+          const cardSlug = b.dataset.del;
+
+          promptAdminVerification(
+            "Supprimer definitivement la carte de \"" + cardName + "\" ?<br><span class=\"text-red-600 font-bold\">Cette action est irreversible.</span>",
+            async () => {
+              const { error } = await supabase.from("cards").delete().eq("slug", cardSlug);
+              if (error) { showToast("Erreur : " + error.message, 5000); return; }
+              allClients = allClients.filter(x => x.slug !== cardSlug);
+              document.getElementById("clients-count").textContent = allClients.length;
+              renderRows(allClients.filter(matches));
+              showToast("Carte supprimee");
+            }
+          );
+        });
+      }
+
+      document.getElementById("search-input").oninput = e => {
+        query = e.target.value.trim();
+        renderRows(allClients.filter(matches));
+      };
+      renderRows(allClients);
+    }
+
+    /* Formulaire */
+    async function renderForm(editSlug) {
+      const root = document.getElementById("root");
+      const isEdit = editSlug && editSlug !== "new";
+
+      let current = {
+        slug: "", full_name: "", job_title: "", company: "",
+        accent_color: "blue", banner: "", avatar: "",
+        phones: [{ type: "WhatsApp", number: "" }], custom_links: []
+      };
+
+      document.getElementById("nav-actions").innerHTML = '<div class="flex items-center gap-2">' +
+          '<a href="/" class="text-xs bg-white border border-slate-200 px-3 py-1.5 rounded-full text-slate-700 font-semibold hover:bg-slate-50 shadow-sm">' +
+            '<i class="fa-solid fa-arrow-left mr-1"></i> Mes clients' +
+          '</a>' +
+          '<button id="btn-logout" class="text-xs bg-white border border-slate-200 px-3 py-1.5 rounded-full text-red-600 font-semibold hover:bg-red-50 shadow-sm">' +
+            '<i class="fa-solid fa-right-from-bracket"></i>' +
+          '</button>' +
+        '</div>';
+      document.getElementById("btn-logout").onclick = async () => {
+        await supabase.auth.signOut();
+        location.href = "/";
+      };
+
+      if (isEdit) {
+        root.innerHTML = '<div class="p-8 bg-white rounded-3xl shadow-sm text-center text-slate-500">' +
+          '<i class="fa-solid fa-circle-notch fa-spin text-2xl text-blue-600 mb-3"></i><br>Chargement...</div>';
+        const { data: rows } = await supabase.from("cards").select("*").eq("slug", editSlug).limit(1);
+        if (rows && rows[0]) {
+          const r = rows[0];
+          current.slug = r.slug;
+          current.full_name = r.full_name || "";
+          current.job_title = r.job_title || "";
+          current.company = r.company || "";
+          current.accent_color = r.accent_color || "blue";
+          if (r.links) {
+            current.banner = r.links.banner || "";
+            current.avatar = r.links.avatar || "";
+            current.phones = r.links.phones || (r.phone ? [{ type: "Telephone", number: r.phone }] : [{ type: "WhatsApp", number: "" }]);
+            current.custom_links = r.links.custom_links || [];
+          }
+        }
+      }
+
+      root.innerHTML = '<div class="bg-white p-6 sm:p-8 rounded-[36px] shadow-sm border border-slate-200 w-full mb-8">' +
+          '<div class="mb-6">' +
+            '<h2 class="text-xl font-black text-slate-900 tracking-tight">' + (isEdit ? "Modifier le profil" : "Creer un nouveau profil") + '</h2>' +
+            '<p class="text-xs text-slate-500 mt-1">Session admin active.</p>' +
+          '</div>' +
+
+          '<div class="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 p-4 rounded-2xl mb-6">' +
+            '<div class="flex items-center justify-between mb-1">' +
+              '<span class="text-xs font-black uppercase text-emerald-900 tracking-wider">' +
+                '<i class="fa-solid fa-wifi rotate-90 mr-1 text-emerald-600"></i> Module d\'encodage NFC' +
+              '</span>' +
+              '<span class="text-[10px] bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded-full font-bold">Actif</span>' +
+            '</div>' +
+            '<p class="text-xs text-emerald-800 mb-3">Approchez votre carte NFC du dos du telephone.</p>' +
+            '<button type="button" id="btn-nfc-standalone" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-2 shadow transition">' +
+              '<i class="fa-solid fa-bolt"></i> Ecrire l\'URL sur une carte NFC' +
+            '</button>' +
+            '<div id="nfc-live-status" class="mt-2 text-center text-xs"></div>' +
+          '</div>' +
+
+          '<div id="status-box"></div>' +
+
+          '<form id="mainCardForm" class="space-y-5">' +
+            '<div>' +
+              '<label class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-1">Slug (identifiant URL)</label>' +
+              '<input type="text" id="slug" value="' + current.slug + '" ' + (isEdit ? "readonly" : "") + ' ' +
+                'class="w-full p-3 border border-slate-200 rounded-xl text-sm font-mono outline-none focus:border-blue-500 ' + (isEdit ? "bg-slate-100 cursor-not-allowed" : "") + '" ' +
+                'placeholder="ex: amine-bennani" required>' +
+            '</div>' +
+
+            '<div class="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">' +
+              '<span class="text-xs font-black text-slate-500 uppercase tracking-wider block">Images</span>' +
+              '<div>' +
+                '<label class="text-xs font-semibold text-slate-600 block mb-1">1. Banniere (image de couverture)</label>' +
+                '<input type="file" id="banner-input" accept="image/*" class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">' +
+                '<div id="banner-preview" class="mt-2 h-20 w-full rounded-xl overflow-hidden border border-slate-200 ' + (current.banner ? "" : "hidden") + '">' +
+                  '<img src="' + current.banner + '" class="w-full h-full object-cover">' +
+                '</div>' +
+              '</div>' +
+              '<div>' +
+                '<label class="text-xs font-semibold text-slate-600 block mb-1">2. Photo de profil ou logo (carre recommande)</label>' +
+                '<input type="file" id="avatar-input" accept="image/*" class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">' +
+                '<div id="avatar-preview" class="mt-2 w-16 h-16 rounded-full overflow-hidden border-2 border-slate-200 ' + (current.avatar ? "" : "hidden") + '">' +
+                  '<img src="' + current.avatar + '" class="w-full h-full object-cover">' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+
+            '<div>' +
+              '<label class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-1">Nom complet</label>' +
+              '<input type="text" id="full_name" value="' + current.full_name + '" required ' +
+                'class="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-500" placeholder="ex: Amine Bennani">' +
+            '</div>' +
+
+            '<div class="grid grid-cols-2 gap-2">' +
+              '<div>' +
+                '<label class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-1">Poste</label>' +
+                '<input type="text" id="job_title" value="' + current.job_title + '" ' +
+                  'class="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-500" placeholder="ex: Directeur">' +
+              '</div>' +
+              '<div>' +
+                '<label class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-1">Entreprise</label>' +
+                '<input type="text" id="company" value="' + current.company + '" ' +
+                  'class="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-500" placeholder="ex: Atlas Tech">' +
+              '</div>' +
+            '</div>' +
+
+            '<div class="p-4 bg-slate-50 rounded-2xl border border-slate-200">' +
+              '<div class="flex justify-between items-center mb-2">' +
+                '<span class="text-xs font-black text-slate-600 uppercase tracking-wider">Telephones</span>' +
+                '<button type="button" id="add-phone-btn" class="text-xs font-bold text-blue-600"><i class="fa-solid fa-plus mr-1"></i>Ajouter</button>' +
+              '</div>' +
+              '<p class="text-[10px] text-slate-400 mb-2">Type WhatsApp ou Telegram pour activer le lien direct.</p>' +
+              '<div id="phones-container" class="space-y-2"></div>' +
+            '</div>' +
+
+            '<div class="p-4 bg-slate-50 rounded-2xl border border-slate-200">' +
+              '<div class="flex justify-between items-center mb-2">' +
+                '<span class="text-xs font-black text-slate-600 uppercase tracking-wider">Reseaux & Liens</span>' +
+                '<button type="button" id="add-link-btn" class="text-xs font-bold text-blue-600"><i class="fa-solid fa-plus mr-1"></i>Ajouter</button>' +
+              '</div>' +
+              '<p class="text-[10px] text-slate-400 mb-2">Choisissez la plateforme et mettez votre pseudo (sans @).</p>' +
+              '<div id="links-container" class="space-y-2"></div>' +
+            '</div>' +
+
+            '<div>' +
+              '<label class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Couleur d\'accent</label>' +
+              '<div class="flex items-center gap-3" id="palette-selector">' +
+                Object.keys(PALETTES).map((k, i) => '<button type="button" data-color="' + k + '" class="w-8 h-8 rounded-full bg-' + (k === "dark" ? "slate-900" : k + "-600") + ' ' + (i === 0 ? "ring-2 ring-offset-2 ring-blue-600" : "") + '"></button>').join("") +
+              '</div>' +
+            '</div>' +
+
+            '<button type="submit" id="submit-btn" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-2xl shadow transition text-sm">' +
+              'Enregistrer le profil' +
+            '</button>' +
+          '</form>' +
+        '</div>';
+
+      let selectedColor = current.accent_color || "blue";
+      let bannerUrl = current.banner || "";
+      let avatarUrl = current.avatar || "";
+
+      document.querySelectorAll("#palette-selector button").forEach(btn => {
+        btn.onclick = () => {
+          document.querySelectorAll("#palette-selector button").forEach(b =>
+            b.className = b.className.replace(/ring-2 ring-offset-2 ring-\w+-600/, "").trim());
+          btn.classList.add("ring-2", "ring-offset-2", "ring-" + (btn.dataset.color === "dark" ? "slate-900" : btn.dataset.color + "-600"));
+          selectedColor = btn.dataset.color;
+        };
+      });
+
+      document.getElementById("banner-input").onchange = async (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        showToast("Upload banniere...", 2000);
+        try {
+          bannerUrl = await uploadImage(f, "banner");
+          const p = document.getElementById("banner-preview");
+          p.innerHTML = '<img src="' + bannerUrl + '" class="w-full h-full object-cover">';
+          p.classList.remove("hidden");
+          showToast("Banniere prete");
+        } catch (err) { showToast("Erreur : " + err.message, 5000); }
+      };
+
+      document.getElementById("avatar-input").onchange = async (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        showToast("Upload photo...", 2000);
+        try {
+          avatarUrl = await uploadImage(f, "avatar");
+          const p = document.getElementById("avatar-preview");
+          p.innerHTML = '<img src="' + avatarUrl + '" class="w-full h-full object-cover">';
+          p.classList.remove("hidden");
+          showToast("Photo prete");
+        } catch (err) { showToast("Erreur : " + err.message, 5000); }
+      };
+
+      const phonesBox = document.getElementById("phones-container");
+      function addPhoneRow(type, number) {
+        type = type || "WhatsApp"; number = number || "";
+        const div = document.createElement("div");
+        div.className = "flex items-center gap-2 phone-row";
+        div.innerHTML = '<input type="text" value="' + type + '" class="w-1/3 p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold" placeholder="Type">' +
+          '<input type="tel" value="' + number + '" class="w-2/3 p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold" placeholder="+2126...">' +
+          '<button type="button" class="text-slate-400 hover:text-red-500 px-2 py-1" onclick="this.parentElement.remove()"><i class="fa-solid fa-trash text-xs"></i></button>';
+        phonesBox.appendChild(div);
+      }
+      current.phones.forEach(p => addPhoneRow(p.type, p.number));
+      document.getElementById("add-phone-btn").onclick = () => addPhoneRow("Telephone", "");
+
+      const linksBox = document.getElementById("links-container");
+      function addLinkRow(platform, url, customName) {
+        platform = platform || "instagram"; url = url || ""; customName = customName || "";
+        const div = document.createElement("div");
+        div.className = "flex flex-col gap-2 link-row p-2 bg-white rounded-xl border border-slate-200";
+        div.innerHTML = '<div class="flex items-center gap-2">' +
+            '<select class="w-1/3 p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold">' +
+              Object.keys(PLATFORMS).map(k => '<option value="' + k + '" ' + (k === platform ? "selected" : "") + '>' + PLATFORMS[k].name + '</option>').join("") +
+            '</select>' +
+            '<input type="text" value="' + url + '" class="link-url flex-1 p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold" placeholder="ex: monpseudo (sans @)">' +
+            '<button type="button" class="text-slate-400 hover:text-red-500 px-2 py-1" onclick="this.parentElement.parentElement.remove()"><i class="fa-solid fa-trash text-xs"></i></button>' +
+          '</div>' +
+          '<input type="text" value="' + customName + '" class="link-desc w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold" placeholder="Description optionnelle">';
+        linksBox.appendChild(div);
+      }
+      current.custom_links.forEach(l => addLinkRow(l.platform, l.url, l.customName || ""));
+      document.getElementById("add-link-btn").onclick = () => addLinkRow("instagram", "");
+
+      document.getElementById("btn-nfc-standalone").onclick = () => {
+        const slug = document.getElementById("slug").value.trim().toLowerCase();
+        if (!slug) {
+          alert("Entrez d'abord un slug avant d'ecrire la carte NFC.");
+          return;
+        }
+        const writeUrl = window.location.origin + "/?c=" + slug;
+        writeNfcTag(writeUrl);
+      };
+
+      document.getElementById("mainCardForm").onsubmit = async (e) => {
+        e.preventDefault();
+        const status = document.getElementById("status-box");
+        const submitBtn = document.getElementById("submit-btn");
+        const slug = document.getElementById("slug").value.trim().toLowerCase();
+
+        const phones = [];
+        document.querySelectorAll(".phone-row").forEach(r => {
+          const i = r.querySelectorAll("input");
+          const t = i[0].value.trim(), n = i[1].value.trim();
+          if (n) phones.push({ type: t, number: n });
+        });
+
+        const links = [];
+        document.querySelectorAll(".link-row").forEach(r => {
+          const p = r.querySelector("select").value;
+          const u = r.querySelector(".link-url").value.trim();
+          const cn = r.querySelector(".link-desc").value.trim();
+          if (u) links.push({ platform: p, url: u, customName: cn });
+        });
+
+        const payload = {
+          slug: slug,
+          full_name: document.getElementById("full_name").value.trim(),
+          job_title: document.getElementById("job_title").value.trim(),
+          company: document.getElementById("company").value.trim(),
+          phone: phones[0] ? phones[0].number : "",
+          accent_color: selectedColor,
+          links: { banner: bannerUrl, avatar: avatarUrl, phones: phones, custom_links: links }
+        };
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Enregistrement...';
+
+        try {
+          const { error } = await supabase.from("cards").upsert(payload, { onConflict: "slug" });
+          if (error) throw error;
+
+          const publicUrl = location.origin + "/?c=" + slug;
+          status.innerHTML = '<div class="bg-emerald-50 border border-emerald-200 text-emerald-900 p-4 rounded-2xl mb-5 text-xs space-y-3 shadow-sm">' +
+              '<div class="font-bold text-sm text-emerald-800"><i class="fa-solid fa-circle-check"></i> Enregistre avec succes !</div>' +
+              '<div><b>Lien public :</b> <a href="' + publicUrl + '" target="_blank" class="underline text-blue-600 font-mono">' + publicUrl + '</a></div>' +
+              '<div class="pt-2"><a href="/" class="inline-block bg-slate-900 text-white font-bold px-3 py-2 rounded-xl text-xs"><i class="fa-solid fa-arrow-left mr-1"></i>Retour</a></div>' +
+            '</div>';
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        } catch (err) {
+          status.innerHTML = '<div class="bg-red-50 border border-red-200 text-red-600 p-3 rounded-xl mb-4 text-xs font-semibold">Echec : ' + err.message + '</div>';
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Enregistrer le profil";
+        }
+      };
+    }
+
+    /* Routeur */
+    async function route() {
+      const cSlug = getParam("c");
+      const editSlug = getParam("edit");
+
+      if (cSlug) return renderProfile(cSlug);
+
+      const session = await getSession();
+      if (!session) {
+        renderLoginScreen(() => route());
+        return;
+      }
+
+      if (editSlug) return renderForm(editSlug);
+      return renderClientsList();
+    }
+
+    supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") location.href = "/";
+    });
+
+    route().catch(err => {
+      document.getElementById("root").innerHTML =
+        '<div class="p-6 bg-red-50 text-red-700 rounded-2xl text-xs">' +
+          '<b>Erreur au demarrage :</b><br>' + err.message +
+        '</div>';
+    });
+  </script>
+</body>
+</html>
