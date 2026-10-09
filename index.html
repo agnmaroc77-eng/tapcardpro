@@ -111,9 +111,6 @@
       return data.publicUrl;
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // CONVERSION PHOTO URL → BASE64 (via fetch, haute qualité)
-    // ═══════════════════════════════════════════════════════════
     async function urlToVCardPhoto(imageUrl) {
       if (!imageUrl) return "";
       try {
@@ -167,9 +164,6 @@
       }
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // MODULE NFC
-    // ═══════════════════════════════════════════════════════════
     async function writeNfcTag(customUrl = null) {
       const targetUrl = customUrl || window.location.href;
       const statusEl = document.getElementById("nfc-live-status");
@@ -205,10 +199,6 @@
       }
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // MODALE DE VÉRIFICATION ADMIN
-    // Utilisée avant la suppression d'une carte
-    // ═══════════════════════════════════════════════════════════
     function promptAdminVerification(actionTitle, onSuccess) {
       const modal = document.createElement("div");
       modal.style.cssText = `
@@ -263,7 +253,6 @@
         const email = document.getElementById("verifyEmail").value.trim();
         const password = document.getElementById("verifyPassword").value;
 
-        // Vérification réelle via Supabase Auth
         const { error } = await supabase.auth.signInWithPassword({ email, password });
 
         if (error) {
@@ -279,9 +268,6 @@
       };
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // VUE PUBLIQUE
-    // ═══════════════════════════════════════════════════════════
     async function renderProfile(slug) {
       const root = document.getElementById("root");
       root.innerHTML = `<div class="p-8 bg-white rounded-3xl shadow-sm text-center text-slate-500">
@@ -392,7 +378,10 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // V-CARD — OPTIMISÉ ANDROID (text/x-vcard = uniquement Contacts)
+    // vCard
+    // iPhone  → feuille de partage (navigator.share)
+    // Android → ouverture DIRECTE dans Contacts (pas de menu)
+    // PC/Mac  → téléchargement du .vcf
     // ═══════════════════════════════════════════════════════════
     async function saveContactDirect(data) {
       const btn = document.getElementById("save-contact-btn");
@@ -415,10 +404,8 @@
           }
         }
 
-        // ─── Téléphones ───
         const telEntries = phones.map(p => `TEL;TYPE=CELL:${esc(p.number)}`).join("\r\n");
 
-        // ─── Liens avec labels personnalisés ───
         const customLinks = (data.links && data.links.custom_links) || [];
         const linkLines = [];
         let itemIdx = 1;
@@ -478,59 +465,66 @@
         const vcard = vcardLines.join("\r\n");
         const fileName = (data.full_name || data.slug || "contact").replace(/\s+/g, "_") + ".vcf";
 
-        // ═══════════════════════════════════════════════════════════
-        // MIME TYPE text/x-vcard : reconnu UNIQUEMENT par les apps Contacts
-        // → Le menu Android n'affichera quasiment que « Contacts »
-        // ═══════════════════════════════════════════════════════════
-        const blob = new Blob([vcard], { type: "text/x-vcard;charset=utf-8" });
-        const file = new File([blob], fileName, { type: "text/x-vcard" });
-
         const isAndroid = /Android/i.test(navigator.userAgent);
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
         // ═══════════════════════════════════════════════════════════
-        // iOS : data URL (compatibilité maximale)
+        // iPHONE → FEUILLE DE PARTAGE (navigator.share)
         // ═══════════════════════════════════════════════════════════
         if (isIOS) {
-          const dataUrl = "data:text/x-vcard;charset=utf-8," + encodeURIComponent(vcard);
-          const a = document.createElement("a");
-          a.href = dataUrl;
-          a.download = fileName;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          showToast("📇 Choisissez « Contacts » dans le menu");
+          const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
+          const file = new File([blob], fileName, { type: "text/vcard" });
+
+          if (navigator.share && navigator.canShare) {
+            let canShareFile = false;
+            try { canShareFile = navigator.canShare({ files: [file] }); }
+            catch (_) { canShareFile = false; }
+
+            if (canShareFile) {
+              showToast("📇 Choisissez « Contacts » dans le menu", 5000);
+              try {
+                await navigator.share({
+                  files: [file],
+                  title: data.full_name || "Contact"
+                });
+                return;
+              } catch (e) {
+                if (e.name === "AbortError") return;
+                console.warn("Partage annulé :", e);
+              }
+            }
+          }
+
+          // Fallback : data URL (iOS < 15)
+          const dataUrl = "data:text/vcard;charset=utf-8," + encodeURIComponent(vcard);
+          window.location.href = dataUrl;
           return;
         }
 
         // ═══════════════════════════════════════════════════════════
-        // ANDROID : Web Share API (feuille de partage native)
+        // ANDROID → OUVERTURE DIRECTE dans Contacts
+        // On utilise text/x-vcard + <a download> pour qu'Android
+        // route directement vers l'app Contacts sans menu de partage
         // ═══════════════════════════════════════════════════════════
-        if (isAndroid && navigator.share && navigator.canShare) {
-          let canShareFile = false;
-          try { canShareFile = navigator.canShare({ files: [file] }); }
-          catch (_) { canShareFile = false; }
-
-          if (canShareFile) {
-            showToast("👉 Choisissez « Contacts » dans le menu", 5000);
-            try {
-              await navigator.share({
-                files: [file],
-                title: data.full_name || "Contact",
-                text: `Contact : ${data.full_name || ""}`
-              });
-              return;
-            } catch (e) {
-              if (e.name === "AbortError") return;
-              console.warn("Partage annulé :", e);
-            }
-          }
+        if (isAndroid) {
+          const dataUrl = "data:text/x-vcard;charset=utf-8," + encodeURIComponent(vcard);
+          const a = document.createElement("a");
+          a.href = dataUrl;
+          a.download = fileName;
+          a.type = "text/x-vcard";
+          a.rel = "noopener";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          showToast("📇 Ouverture du contact...", 3000);
+          return;
         }
 
         // ═══════════════════════════════════════════════════════════
-        // FALLBACK : téléchargement direct (PC, vieux Android)
+        // PC / MAC → téléchargement du .vcf
         // ═══════════════════════════════════════════════════════════
+        const blob = new Blob([vcard], { type: "text/x-vcard;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -541,7 +535,7 @@
         a.click();
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 5000);
-        showToast("📁 Contact téléchargé — ouvrez-le depuis vos notifications");
+        showToast("📁 Contact téléchargé");
 
       } catch (err) {
         console.error(err);
@@ -551,9 +545,6 @@
       }
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // AUTHENTIFICATION
-    // ═══════════════════════════════════════════════════════════
     async function getSession() {
       const { data: { session } } = await supabase.auth.getSession();
       return session;
@@ -622,9 +613,6 @@
       };
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // LISTE DES CLIENTS
-    // ═══════════════════════════════════════════════════════════
     async function renderClientsList() {
       const root = document.getElementById("root");
       mountLogoutButton();
@@ -711,10 +699,6 @@
           catch { prompt("Copiez ce lien :", b.dataset.copy); }
         });
 
-        // ═══════════════════════════════════════════════════════════
-        // SUPPRESSION AVEC VÉRIFICATION ADMIN
-        // L'utilisateur doit confirmer son identité avant de supprimer
-        // ═══════════════════════════════════════════════════════════
         box.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
           const cardName = b.dataset.name;
           const cardSlug = b.dataset.del;
@@ -740,9 +724,6 @@
       renderRows(allClients);
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // FORMULAIRE
-    // ═══════════════════════════════════════════════════════════
     async function renderForm(editSlug) {
       const root = document.getElementById("root");
       const isEdit = editSlug && editSlug !== "new";
@@ -1019,9 +1000,6 @@
       };
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // ROUTEUR
-    // ═══════════════════════════════════════════════════════════
     async function route() {
       const cSlug = getParam("c");
       const editSlug = getParam("edit");
