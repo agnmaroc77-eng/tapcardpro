@@ -375,7 +375,10 @@
       }
     }
 
-    /* vCard : iOS Web Share API, Android text/x-vcard */
+    /* ═══════════════════════════════════════════════════════════
+       vCard — iOS: ouverture DIRECTE dans Contacts
+              Android: text/x-vcard via Web Share
+       ═══════════════════════════════════════════════════════════ */
     async function saveContactDirect(data) {
       const btn = document.getElementById("save-contact-btn");
       const orig = btn ? btn.innerHTML : "";
@@ -464,39 +467,19 @@
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
-        /* iPHONE : Web Share API avec text/vcard */
+        /* ═══════════════════════════════════════════════════════════
+           iPHONE : navigation DIRECTE vers data URL text/vcard
+           Safari ouvre directement l'ecran "Ajouter un contact"
+           ═══════════════════════════════════════════════════════════ */
         if (isIOS) {
-          const iosBlob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
-          const iosFile = new File([iosBlob], fileName, { type: "text/vcard" });
-
-          let canShareFile = false;
-          if (navigator.canShare) {
-            try { canShareFile = navigator.canShare({ files: [iosFile] }); }
-            catch (_) { canShareFile = false; }
-          }
-
-          if (canShareFile && navigator.share) {
-            showToast("Choisissez Contacts dans le menu", 5000);
-            try {
-              await navigator.share({
-                files: [iosFile],
-                title: data.full_name || "Contact"
-              });
-              return;
-            } catch (e) {
-              if (e.name === "AbortError") return;
-              console.warn("Partage iOS annule :", e);
-            }
-          }
-
-          /* Fallback iOS < 15 */
           const dataUrl = "data:text/vcard;charset=utf-8," + encodeURIComponent(vcard);
           window.location.href = dataUrl;
-          showToast("Suivez les instructions pour ajouter le contact", 5000);
           return;
         }
 
-        /* ANDROID : text/x-vcard */
+        /* ═══════════════════════════════════════════════════════════
+           ANDROID : text/x-vcard + Web Share API
+           ═══════════════════════════════════════════════════════════ */
         const blob = new Blob([vcard], { type: "text/x-vcard;charset=utf-8" });
         const file = new File([blob], fileName, { type: "text/x-vcard" });
 
@@ -521,7 +504,7 @@
           }
         }
 
-        /* FALLBACK : telechargement direct */
+        /* FALLBACK : telechargement direct (PC, vieux Android) */
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
