@@ -206,7 +206,7 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // MODALE DE VÉRIFICATION ADMIN
+    // ✨ NOUVEAU : MODALE DE VÉRIFICATION ADMIN
     // Utilisée avant la suppression d'une carte
     // ═══════════════════════════════════════════════════════════
     function promptAdminVerification(actionTitle, onSuccess) {
@@ -392,7 +392,8 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // V-CARD — OPTIMISÉ ANDROID (text/x-vcard = uniquement Contacts)
+    // V-CARD — CORRIGÉ POUR iPHONE
+    // Utilise Web Share API en priorité (fonctionne sur iOS 15+)
     // ═══════════════════════════════════════════════════════════
     async function saveContactDirect(data) {
       const btn = document.getElementById("save-contact-btn");
@@ -476,44 +477,25 @@
         ].filter(Boolean);
 
         const vcard = vcardLines.join("\r\n");
+
         const fileName = (data.full_name || data.slug || "contact").replace(/\s+/g, "_") + ".vcf";
+        const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
+        const file = new File([blob], fileName, { type: "text/vcard" });
 
         // ═══════════════════════════════════════════════════════════
-        // MIME TYPE text/x-vcard : reconnu UNIQUEMENT par les apps Contacts
-        // → Le menu Android n'affichera quasiment que « Contacts »
+        // ✨ CORRECTION iPHONE : On utilise navigator.share EN PRIORITÉ
+        // Sur iOS 15+ et Android, l'utilisateur choisit « Contacts »
+        // dans la feuille de partage → le contact est créé directement.
         // ═══════════════════════════════════════════════════════════
-        const blob = new Blob([vcard], { type: "text/x-vcard;charset=utf-8" });
-        const file = new File([blob], fileName, { type: "text/x-vcard" });
-
-        const isAndroid = /Android/i.test(navigator.userAgent);
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-                     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-
-        // ═══════════════════════════════════════════════════════════
-        // iOS : data URL (compatibilité maximale)
-        // ═══════════════════════════════════════════════════════════
-        if (isIOS) {
-          const dataUrl = "data:text/x-vcard;charset=utf-8," + encodeURIComponent(vcard);
-          const a = document.createElement("a");
-          a.href = dataUrl;
-          a.download = fileName;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          showToast("📇 Choisissez « Contacts » dans le menu");
-          return;
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // ANDROID : Web Share API (feuille de partage native)
-        // ═══════════════════════════════════════════════════════════
-        if (isAndroid && navigator.share && navigator.canShare) {
+        if (navigator.share) {
           let canShareFile = false;
-          try { canShareFile = navigator.canShare({ files: [file] }); }
-          catch (_) { canShareFile = false; }
+          if (navigator.canShare) {
+            try { canShareFile = navigator.canShare({ files: [file] }); }
+            catch (_) { canShareFile = false; }
+          }
 
           if (canShareFile) {
-            showToast("👉 Choisissez « Contacts » dans le menu", 5000);
+            showToast("👉 Choisissez « Contacts » dans le menu qui s'ouvre");
             try {
               await navigator.share({
                 files: [file],
@@ -523,25 +505,24 @@
               return;
             } catch (e) {
               if (e.name === "AbortError") return;
-              console.warn("Partage annulé :", e);
+              console.warn("Partage annulé ou échoué :", e);
             }
           }
         }
 
         // ═══════════════════════════════════════════════════════════
-        // FALLBACK : téléchargement direct (PC, vieux Android)
+        // FALLBACK : Téléchargement direct (Android ancien, PC, etc.)
         // ═══════════════════════════════════════════════════════════
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
         a.download = fileName;
-        a.type = "text/x-vcard";
         a.rel = "noopener";
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 5000);
-        showToast("📁 Contact téléchargé — ouvrez-le depuis vos notifications");
+        showToast("📁 Fichier .vcf téléchargé — tapez dessus pour l'ajouter à vos contacts");
 
       } catch (err) {
         console.error(err);
@@ -712,7 +693,7 @@
         });
 
         // ═══════════════════════════════════════════════════════════
-        // SUPPRESSION AVEC VÉRIFICATION ADMIN
+        // ✨ SUPPRESSION AVEC VÉRIFICATION ADMIN
         // L'utilisateur doit confirmer son identité avant de supprimer
         // ═══════════════════════════════════════════════════════════
         box.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
