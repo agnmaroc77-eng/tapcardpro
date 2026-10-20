@@ -35,6 +35,8 @@
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const BUCKET = "media";
+    const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 heures
+    const LOGIN_TS_KEY = "tapcard_login_ts";
 
     const boot = document.getElementById("boot");
     if (boot) boot.remove();
@@ -101,7 +103,7 @@
     async function uploadImage(file, prefix) {
       if (!file) return null;
       const blob = await compressImage(file, prefix === "banner" ? 1200 : 600,
-                                              prefix === "banner" ? 0.85 : 0.92);
+                                             prefix === "banner" ? 0.85 : 0.92);
       const name = `${prefix}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
       const { error } = await supabase.storage.from(BUCKET).upload(name, blob, {
         contentType: "image/jpeg", cacheControl: "31536000"
@@ -263,6 +265,7 @@
           return;
         }
 
+        localStorage.setItem(LOGIN_TS_KEY, Date.now().toString());
         close();
         onSuccess();
       };
@@ -378,10 +381,7 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // vCard
-    // iPhone  → feuille de partage (navigator.share)
-    // Android → ouverture DIRECTE dans Contacts (pas de menu)
-    // PC/Mac  → téléchargement du .vcf
+    // vCard — Ouverture DIRECTE dans Contacts (iPhone & Android)
     // ═══════════════════════════════════════════════════════════
     async function saveContactDirect(data) {
       const btn = document.getElementById("save-contact-btn");
@@ -448,11 +448,16 @@
         const publicUrl = location.origin + "/?c=" + (data.slug || "");
         const noteLine = `NOTE;CHARSET=UTF-8:Retrouvez ma carte de visite numérique : ${esc(publicUrl)}`;
 
+        const fullName = (data.full_name || "").trim();
+        const nameParts = fullName.split(/\s+/);
+        const firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join(" ") : fullName;
+        const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : "";
+
         const vcardLines = [
           "BEGIN:VCARD",
           "VERSION:3.0",
-          `FN;CHARSET=UTF-8:${esc(data.full_name || "")}`,
-          `N;CHARSET=UTF-8:${esc(data.full_name || "")};;;;`,
+          `FN;CHARSET=UTF-8:${esc(fullName)}`,
+          `N;CHARSET=UTF-8:${esc(lastName)};${esc(firstName)};;;`,
           data.company ? `ORG;CHARSET=UTF-8:${esc(data.company)}` : "",
           data.job_title ? `TITLE;CHARSET=UTF-8:${esc(data.job_title)}` : "",
           telEntries,
@@ -463,74 +468,48 @@
         ].filter(Boolean);
 
         const vcard = vcardLines.join("\r\n");
-        const fileName = (data.full_name || data.slug || "contact").replace(/\s+/g, "_") + ".vcf";
+        const fileName = (fullName || data.slug || "contact").replace(/\s+/g, "_") + ".vcf";
 
-        const isAndroid = /Android/i.test(navigator.userAgent);
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-                     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+                      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+        const isAndroid = /Android/i.test(navigator.userAgent);
 
         // ═══════════════════════════════════════════════════════════
-        // iPHONE → FEUILLE DE PARTAGE (navigator.share)
+        // iPHONE / iOS → Ouverture directe de la fiche Contact
         // ═══════════════════════════════════════════════════════════
         if (isIOS) {
           const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
-          const file = new File([blob], fileName, { type: "text/vcard" });
-
-          if (navigator.share && navigator.canShare) {
-            let canShareFile = false;
-            try { canShareFile = navigator.canShare({ files: [file] }); }
-            catch (_) { canShareFile = false; }
-
-            if (canShareFile) {
-              showToast("📇 Choisissez « Contacts » dans le menu", 5000);
-              try {
-                await navigator.share({
-                  files: [file],
-                  title: data.full_name || "Contact"
-                });
-                return;
-              } catch (e) {
-                if (e.name === "AbortError") return;
-                console.warn("Partage annulé :", e);
-              }
-            }
-          }
-
-          // Fallback : data URL (iOS < 15)
-          const dataUrl = "data:text/vcard;charset=utf-8," + encodeURIComponent(vcard);
-          window.location.href = dataUrl;
+          const blobUrl = URL.createObjectURL(blob);
+          window.location.assign(blobUrl);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
           return;
         }
 
         // ═══════════════════════════════════════════════════════════
-        // ANDROID → OUVERTURE DIRECTE dans Contacts
-        // On utilise text/x-vcard + <a download> pour qu'Android
-        // route directement vers l'app Contacts sans menu de partage
+        // ANDROID → Ouverture directe dans l'application Contacts
         // ═══════════════════════════════════════════════════════════
         if (isAndroid) {
-          const dataUrl = "data:text/x-vcard;charset=utf-8," + encodeURIComponent(vcard);
+          const blob = new Blob([vcard], { type: "text/x-vcard;charset=utf-8" });
+          const blobUrl = URL.createObjectURL(blob);
           const a = document.createElement("a");
-          a.href = dataUrl;
+          a.href = blobUrl;
           a.download = fileName;
-          a.type = "text/x-vcard";
-          a.rel = "noopener";
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
           showToast("📇 Ouverture du contact...", 3000);
           return;
         }
 
         // ═══════════════════════════════════════════════════════════
-        // PC / MAC → téléchargement du .vcf
+        // PC / MAC → Téléchargement du fichier .vcf
         // ═══════════════════════════════════════════════════════════
-        const blob = new Blob([vcard], { type: "text/x-vcard;charset=utf-8" });
+        const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
         a.download = fileName;
-        a.type = "text/x-vcard";
-        a.rel = "noopener";
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -545,8 +524,34 @@
       }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // Vérification de session :
+    // 1. Déconnexion automatique toutes les 24 heures
+    // 2. Vérification en direct sur le serveur Supabase (si le compte
+    //    est supprimé dans Supabase, l'accès est coupé immédiatement)
+    // ═══════════════════════════════════════════════════════════
     async function getSession() {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return null;
+
+      const loginTs = parseInt(localStorage.getItem(LOGIN_TS_KEY) || "0", 10);
+      const now = Date.now();
+
+      // Si pas d'horodatage ou si 24h sont dépassées -> déconnexion forcée
+      if (!loginTs || (now - loginTs) > SESSION_MAX_AGE_MS) {
+        localStorage.removeItem(LOGIN_TS_KEY);
+        await supabase.auth.signOut();
+        return null;
+      }
+
+      // Vérifie auprès du serveur Supabase que l'utilisateur existe toujours
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData?.user) {
+        localStorage.removeItem(LOGIN_TS_KEY);
+        await supabase.auth.signOut();
+        return null;
+      }
+
       return session;
     }
 
@@ -598,6 +603,7 @@
           btn.textContent = "Se connecter";
           return;
         }
+        localStorage.setItem(LOGIN_TS_KEY, Date.now().toString());
         onSuccess();
       };
     }
@@ -608,6 +614,7 @@
           <i class="fa-solid fa-right-from-bracket mr-1"></i> Quitter
         </button>`;
       document.getElementById("btn-logout").onclick = async () => {
+        localStorage.removeItem(LOGIN_TS_KEY);
         await supabase.auth.signOut();
         location.href = "/";
       };
@@ -744,6 +751,7 @@
           </button>
         </div>`;
       document.getElementById("btn-logout").onclick = async () => {
+        localStorage.removeItem(LOGIN_TS_KEY);
         await supabase.auth.signOut();
         location.href = "/";
       };
@@ -949,6 +957,15 @@
         e.preventDefault();
         const status = document.getElementById("status-box");
         const submitBtn = document.getElementById("submit-btn");
+
+        // Vérifie que la session est toujours valide (< 24h et compte existant) avant d'enregistrer
+        const activeSession = await getSession();
+        if (!activeSession) {
+          showToast("⚠️ Session expirée. Veuillez vous reconnecter.", 4000);
+          renderLoginScreen(() => route());
+          return;
+        }
+
         const slug = document.getElementById("slug").value.trim().toLowerCase();
 
         const phones = [];
@@ -1016,8 +1033,19 @@
       return renderClientsList();
     }
 
+    // Vérification périodique toutes les minutes au cas où la page reste ouverte > 24h
+    setInterval(async () => {
+      if (!getParam("c")) {
+        const s = await getSession();
+        if (!s) location.reload();
+      }
+    }, 60 * 1000);
+
     supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") location.href = "/";
+      if (event === "SIGNED_OUT") {
+        localStorage.removeItem(LOGIN_TS_KEY);
+        if (!getParam("c")) location.href = "/";
+      }
     });
 
     route().catch(err => {
